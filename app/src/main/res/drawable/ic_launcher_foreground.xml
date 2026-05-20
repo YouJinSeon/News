@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 안전 영역: 중앙 72dp 기준, 여유있게 34~74dp 안에 배치 -->
+
+    <!-- 신문 카드 -->
+    <path
+        android:pathData="M34,30 L74,30 Q77,30 77,33 L77,78 Q77,81 74,81 L34,81 Q31,81 31,78 L31,33 Q31,30 34,30 Z"
+        android:fillColor="#FFF7ED"/>
+
+    <!-- 헤드라인 바 -->
+    <path
+        android:pathData="M35,35 L73,35 Q75,35 75,37 L75,44 Q75,46 73,46 L35,46 Q33,46 33,44 L33,37 Q33,35 35,35 Z"
+        android:fillColor="#FF8F00"/>
+
+    <!-- 소제목 줄 1 -->
+    <path
+        android:pathData="M35,51 L60,51 Q62,51 62,53 L62,55 Q62,57 60,57 L35,57 Q33,57 33,55 L33,53 Q33,51 35,51 Z"
+        android:fillColor="#9CA3AF"/>
+
+    <!-- 소제목 줄 2 -->
+    <path
+        android:pathData="M35,60 L66,60 Q68,60 68,62 L68,64 Q68,66 66,66 L35,66 Q33,66 33,64 L33,62 Q33,60 35,60 Z"
+        android:fillColor="#9CA3AF"
+        android:fillAlpha="0.6"/>
+
+    <!-- 하단 이미지 영역 -->
+    <path
+        android:pathData="M35,70 L73,70 Q75,70 75,72 L75,77 Q75,79 73,79 L35,79 Q33,79 33,77 L33,72 Q33,70 35,70 Z"
+        android:fillColor="#FFEDD5"/>
+
+    <!-- N -->
+    <path
+        android:pathData="M38,78 L38,71 L44,78 L44,71"
+        android:strokeColor="#FF8F00"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- E -->
+    <path
+        android:pathData="M47,71 L47,78 M47,71 L52,71 M47,74.5 L51,74.5 M47,78 L52,78"
+        android:strokeColor="#FF8F00"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- W -->
+    <path
+        android:pathData="M54,71 L56,78 L58.5,73 L61,78 L63,71"
+        android:strokeColor="#FF8F00"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- S -->
+    <path
+        android:pathData="M70,72 Q70,71 68,71 L66,71 Q65,71 65,72.5 Q65,74 66,74.5 L68,74.5 Q70,74.5 70,76.5 Q70,78 68,78 L66,78 Q65,78 65,77"
+        android:strokeColor="#FF8F00"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- AI 오렌지 원형 뱃지 (우상단) -->
+    <path
+        android:pathData="M69,30 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"
+        android:fillColor="#FF8F00"/>
+
+    <!-- 뱃지 안 흰색 AI 텍스트 표현 (A 모양) -->
+    <path
+        android:pathData="M64,34 L68,25 L72,34"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M65.,32 L70.5,32"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+
+    <!-- I 모양 -->
+    <path
+        android:pathData="M74,25 L74,34"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.6"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+
+</vector>

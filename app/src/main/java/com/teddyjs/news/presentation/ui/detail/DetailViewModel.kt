@@ -1,0 +1,175 @@
+package com.teddyjs.news.presentation.ui.detail
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.teddyjs.news.data.local.UserPreferencesDataStore
+import com.teddyjs.news.data.remote.GeminiResult
+import com.teddyjs.news.data.remote.GeminiService
+import com.teddyjs.news.data.repository.NewsRepository
+import com.teddyjs.news.domain.model.NewsArticle
+import com.teddyjs.news.domain.model.RewardedFeature
+import com.teddyjs.news.domain.model.UserPlan
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import timber.log.Timber
+import javax.inject.Inject
+
+@HiltViewModel
+class DetailViewModel @Inject constructor(
+    private val repository: NewsRepository,
+    private val userPrefs: UserPreferencesDataStore,
+    private val geminiService: GeminiService,  // ← 추가
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(DetailUiState())
+    val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
+
+    val userPlan: StateFlow<UserPlan> = repository.userPlan
+        .stateIn(viewModelScope, SharingStarted.Eagerly, UserPlan.FREE)
+
+    val followedTopics: StateFlow<List<String>> = userPrefs.followedTopics
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _webViewUrl = MutableStateFlow<String?>(null)
+    val webViewUrl: StateFlow<String?> = _webViewUrl.asStateFlow()
+
+    fun adUsesFlow(feature: RewardedFeature) = repository.adUsesFlow(feature)
+
+    fun loadArticle(articleId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+
+            userPrefs.setCurrentArticleId(articleId)
+
+            val article = repository.getArticleById(articleId)
+            _uiState.update { it.copy(article = article, isLoading = false) }
+            article?.let { launch { fetchFullContent(it.url) } }
+        }
+    }
+
+    // ── AI 간략 요약 (횟수 차감) ────────────────────────────
+    fun requestQuickSummary(article: NewsArticle) {
+        if (_uiState.value.isQuickSummaryLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isQuickSummaryLoading = true) }
+            runCatching {
+                val prompt = """
+                다음 뉴스를 알기쉽게 딱 2문장으로 핵심만 요약해줘.
+                40자 이내로. 마크다운 없이 순수 텍스트만.
+                
+                제목: ${article.title}
+                
+                (전체 기사를 보려면 '전체 기사 읽기' 버튼을 이용하세요)
+            """.trimIndent()
+                geminiService.callGeminiRaw(prompt)
+            }.onSuccess { result ->
+                repository.consumeAdUse(RewardedFeature.AI_SUMMARY)
+                _uiState.update { it.copy(quickSummary = result, isQuickSummaryLoading = false) }
+            }.onFailure {
+                Timber.e(it, "간략 요약 실패")
+                _uiState.update { it.copy(isQuickSummaryLoading = false) }
+            }
+        }
+    }
+    // 광고 보고 간략 요약 (+3회 충전 후 실행)
+    fun onAdRewardedAndQuickSummary(article: NewsArticle) {
+        viewModelScope.launch {
+            repository.grantAdReward(RewardedFeature.AI_SUMMARY)
+            requestQuickSummary(article)
+        }
+    }
+
+    // ── AI 심층 분석 (무조건 광고) ───────────────────────────
+    fun requestDeepAnalysis(article: NewsArticle) {
+        if (_uiState.value.isAiLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAiLoading = true) }
+            when (val result = repository.getAiSummary(article)) {
+                is GeminiResult.Success -> {
+                    Timber.d("심층 분석 결과: summary=${result.summary}")
+                    Timber.d("투자 시사점: ${result.investmentInsight}")  // ← 추가
+                    Timber.d("키워드: ${result.keywords}")
+                    _uiState.update {
+                        it.copy(
+                            aiSummary = result.summary,
+                            investmentInsight = result.investmentInsight,
+                            keywords = result.keywords,
+                            isAiLoading = false,
+                        )
+                    }
+                }
+                is GeminiResult.Error -> _uiState.update {
+                    it.copy(isAiLoading = false, error = result.message)
+                }
+            }
+        }
+    }
+
+    // 광고 보고 심층 분석
+    fun onAdRewardedAndDeepAnalysis(article: NewsArticle) {
+        viewModelScope.launch {
+            repository.grantAdReward(RewardedFeature.KEYWORD_EXTRACT)
+            requestDeepAnalysis(article)
+        }
+    }
+
+    fun toggleBookmark(articleId: String) {
+        viewModelScope.launch {
+            repository.toggleBookmark(articleId)
+            loadArticle(articleId)
+        }
+    }
+
+    fun onAdRewarded(feature: RewardedFeature) {
+        viewModelScope.launch { repository.grantAdReward(feature) }
+    }
+
+    fun toggleFollowTopic(topic: String) {
+        viewModelScope.launch {
+            if (followedTopics.value.contains(topic)) {
+                userPrefs.unfollowTopic(topic)
+            } else {
+                userPrefs.followTopic(topic)
+            }
+        }
+    }
+
+    private suspend fun fetchFullContent(url: String) {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 TeddyNewsApp/1.0")
+                    .build()
+            }
+        }.onFailure { Timber.e(it, "본문 파싱 실패") }
+    }
+
+    fun saveWebViewUrl(url: String) {
+        _webViewUrl.value = url
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        viewModelScope.launch {
+            userPrefs.setCurrentArticleId(null)
+        }
+    }
+}
+
+data class DetailUiState(
+    val article: NewsArticle? = null,
+    val isLoading: Boolean = true,
+    val quickSummary: String? = null,
+    val isQuickSummaryLoading: Boolean = false,
+    val aiSummary: String? = null,
+    val isAiLoading: Boolean = false,
+    val investmentInsight: String? = null,
+    val keywords: List<String> = emptyList(),
+    val error: String? = null,
+)
