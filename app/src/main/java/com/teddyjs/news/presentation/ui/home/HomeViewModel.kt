@@ -182,7 +182,7 @@ class HomeViewModel @Inject constructor(
                     reorderedTop + sorted.drop(10).filter { it.id !in reorderedTop.map { a -> a.id }.toSet() }
                 }
 
-                _uiState.update { it.copy(articles = finalSorted, isLoading = false) }
+                _uiState.update { it.copy(articles = finalSorted.distinctBy { it.id }, isLoading = false) }
             }
         }
     }
