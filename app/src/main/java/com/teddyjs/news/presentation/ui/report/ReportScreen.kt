@@ -330,7 +330,11 @@ fun ReportEmptyState(adUses: Int, userPlan: UserPlan, onGenerate: () -> Unit, on
                 Text(
                     if (userPlan == UserPlan.PREMIUM || adUses > 0) "리포트 생성하기"
                     else "광고 1회 보고 리포트 생성",
-                    color = Amber400, fontWeight = FontWeight.Medium,
+                    color = Amber400,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,        // 추가: 고정 폰트 크기
+                    maxLines = 1,            // 추가: 한 줄 강제
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
         }

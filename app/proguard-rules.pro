@@ -24,3 +24,14 @@
 
 # Kotlin Coroutines
 -keepclassmembernames class kotlinx.** { volatile <fields>; }
+
+# Firebase Crashlytics
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.firebase.**
+
+# DataStore (Kotlin Serialization)
+-keepclassmembers class * extends androidx.datastore.preferences.protobuf.GeneratedMessageLite {
+    <fields>;
+}

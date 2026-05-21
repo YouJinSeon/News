@@ -326,7 +326,7 @@ class NewsFeedService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 9999
-        val BREAKING_KEYWORDS = emptyList<String>()
+        val BREAKING_KEYWORDS = listOf("속보", "긴급", "사망", "폭발", "지진", "사고", "붕괴", "테러")
 
         fun start(context: Context) {
             val intent = Intent(context, NewsFeedService::class.java)

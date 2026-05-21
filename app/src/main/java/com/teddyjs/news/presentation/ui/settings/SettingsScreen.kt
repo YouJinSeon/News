@@ -29,6 +29,8 @@ import com.teddyjs.news.domain.model.UserPlan
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.settings.SettingsViewModel
 import com.teddyjs.news.util.BillingManager
+import kotlinx.coroutines.launch
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -49,6 +51,16 @@ fun SettingsScreen(
     val nightNotification by viewModel.nightNotification.collectAsState()
     val followedTopics by viewModel.followedTopics.collectAsState()
     var showTopicDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        viewModel.algorithmResetDone.collect {
+            scope.launch {
+                snackbarHostState.showSnackbar("추천 알고리즘이 초기화되었어요 ✓")
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -63,7 +75,10 @@ fun SettingsScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
             )
-        }
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -382,7 +397,13 @@ fun SettingsItem(
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = iconTint)
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp)
+            Text(
+                title,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
             subtitle?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
             }

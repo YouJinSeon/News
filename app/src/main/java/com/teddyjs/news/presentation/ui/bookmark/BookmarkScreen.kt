@@ -223,17 +223,20 @@ fun BookmarkScreen(
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (searchKeywords.isNotEmpty()) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Filled.Search, null,
-                                            modifier = Modifier.size(11.dp),
-                                            tint = Blue400.copy(alpha = 0.6f))
-                                        Text("검색", fontSize = 10.sp,
-                                            color = Color(0xFF185FA5).copy(alpha = 0.6f),
-                                            modifier = Modifier.width(28.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            Icon(Icons.Filled.Search, null,
+                                                modifier = Modifier.size(11.dp),
+                                                tint = Blue400.copy(alpha = 0.6f))
+                                            Text("검색", fontSize = 10.sp,
+                                                color = Color(0xFF185FA5).copy(alpha = 0.6f))
+                                        }
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
                                             items(searchKeywords.take(5)) { keyword ->
                                                 Surface(
                                                     shape = RoundedCornerShape(20.dp),
@@ -249,17 +252,20 @@ fun BookmarkScreen(
                                     }
                                 }
                                 if (clickedKeywords.isNotEmpty()) {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Filled.TouchApp, null,
-                                            modifier = Modifier.size(11.dp),
-                                            tint = Blue400.copy(alpha = 0.6f))
-                                        Text("클릭", fontSize = 10.sp,
-                                            color = Color(0xFF185FA5).copy(alpha = 0.6f),
-                                            modifier = Modifier.width(28.dp))
-                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            Icon(Icons.Filled.TouchApp, null,
+                                                modifier = Modifier.size(11.dp),
+                                                tint = Blue400.copy(alpha = 0.6f))
+                                            Text("클릭", fontSize = 10.sp,
+                                                color = Color(0xFF185FA5).copy(alpha = 0.6f))
+                                        }
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
                                             items(clickedKeywords.take(5)) { keyword ->
                                                 Surface(
                                                     shape = RoundedCornerShape(20.dp),

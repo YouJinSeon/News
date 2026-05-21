@@ -124,7 +124,15 @@ class SearchViewModel @Inject constructor(
     }
 
     fun toggleBookmark(articleId: String) {
-        viewModelScope.launch { repository.toggleBookmark(articleId) }
+        viewModelScope.launch {
+            repository.toggleBookmark(articleId)
+            _results.update { list ->
+                list.map { article ->
+                    if (article.id == articleId) article.copy(isBookmarked = !article.isBookmarked)
+                    else article
+                }
+            }
+        }
     }
 
     private fun loadHistory() {

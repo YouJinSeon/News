@@ -51,6 +51,9 @@ class SettingsViewModel @Inject constructor(
     val followedTopics: StateFlow<List<String>> = userPrefs.followedTopics
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    private val _algorithmResetDone = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val algorithmResetDone = _algorithmResetDone.asSharedFlow()
+
     init { loadSettings() }
 
     private fun loadSettings() {
@@ -131,6 +134,7 @@ class SettingsViewModel @Inject constructor(
     fun clearAlgorithmData() {
         viewModelScope.launch {
             userPrefs.clearAlgorithmData()
+            _algorithmResetDone.tryEmit(Unit)
         }
     }
 

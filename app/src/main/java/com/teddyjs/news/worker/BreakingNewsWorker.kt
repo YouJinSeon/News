@@ -84,7 +84,7 @@ class BreakingNewsWorker @AssistedInject constructor(
     companion object {
         const val WORK_NAME = "breaking_news_check"
 
-        val BREAKING_KEYWORDS = emptyList<String>()
+        val BREAKING_KEYWORDS = listOf("속보", "긴급", "사망", "폭발", "지진", "사고", "붕괴", "테러")
         fun schedule(workManager: WorkManager) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)

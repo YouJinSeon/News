@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.teddyjs.news.MainActivity
+import com.teddyjs.news.data.local.UserPreferencesDataStore
 import com.teddyjs.news.data.repository.NewsRepository
 import com.teddyjs.news.domain.model.NewsArticle
 import com.teddyjs.news.domain.model.NewsCategory
@@ -23,11 +24,20 @@ class DailyBriefingWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted workerParams: WorkerParameters,
     private val repository: NewsRepository,
+    private val userPrefs: UserPreferencesDataStore,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
         return runCatching {
+            val dailyEnabled = userPrefs.getDailyNotification()
+            if (!dailyEnabled) return Result.success()
+
             val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+
+            val nightEnabled = userPrefs.nightNotificationFlow.first()
+            val isNightTime = hour >= 22 || hour < 8
+            if (!nightEnabled && isNightTime) return Result.success()
+
             val (title, emoji) = when (hour) {
                 in 7..9   -> "오늘의 아침 브리핑" to "☀️"
                 in 11..13 -> "점심 뉴스 브리핑" to "🌤️"
