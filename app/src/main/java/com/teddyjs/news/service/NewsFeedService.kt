@@ -28,6 +28,7 @@ class NewsFeedService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var feedJob: Job? = null
     private var notificationJob: Job? = null
+    private var isCheckingBreaking = false
 
     override fun onCreate() {
         super.onCreate()
@@ -188,21 +189,31 @@ class NewsFeedService : Service() {
     }
 
     private suspend fun checkBreakingNews() {
+        // 이전 실행이 아직 끝나지 않았으면 스킵
+        if (isCheckingBreaking) return
+        isCheckingBreaking = true
+
         runCatching {
             if (isNightTime()) return
 
+            val now = System.currentTimeMillis()
             val notifiedIds = userPrefs.getNotifiedArticleIds().toMutableSet()
             val customKeywords = repository.getCustomBreakingKeywords()
             val allKeywords = BREAKING_KEYWORDS + customKeywords
-
-            val cutoff = System.currentTimeMillis() - 30 * 60 * 1000L
+            val cutoff = now - 60 * 60 * 1000L
             val allArticles = repository.getNewsFeed(
                 repository.subscribedCategories.first()
             ).first()
 
-            // 속보 — 하루 최대 5개
+            // 속보
             val breakingCount = notifiedIds.count { !it.startsWith("topic_") }
-            if (breakingCount < 5 && allKeywords.isNotEmpty()) {
+            val lastBreakingTime = userPrefs.getLastBreakingTime()
+            val breakingCooldown = 60 * 60 * 1000L
+
+            if (breakingCount < 5
+                && now - lastBreakingTime > breakingCooldown
+                && allKeywords.isNotEmpty()
+            ) {
                 allArticles.filter { article ->
                     article.publishedAt > cutoff &&
                             !notifiedIds.contains(article.id) &&
@@ -211,13 +222,20 @@ class NewsFeedService : Service() {
                             }
                 }.take(1).forEach { article ->
                     sendBreakingNotification(article)
+                    notifiedIds.add(article.id) // ← 로컬 Set도 즉시 업데이트
                     userPrefs.addNotifiedArticleId(article.id)
+                    userPrefs.setLastBreakingTime()
                 }
             }
 
-            // 토픽 — 하루 최대 3개
+            // 토픽
             val topicCount = notifiedIds.count { it.startsWith("topic_") }
-            if (topicCount < 3) {
+            val lastTopicTime = userPrefs.getLastTopicTime()
+            val topicCooldown = 3 * 60 * 60 * 1000L
+
+            if (topicCount < 3
+                && now - lastTopicTime > topicCooldown
+            ) {
                 val followedTopics = repository.getFollowedTopics()
                 if (followedTopics.isNotEmpty()) {
                     allArticles.filter { article ->
@@ -228,11 +246,15 @@ class NewsFeedService : Service() {
                                 }
                     }.take(1).forEach { article ->
                         sendTopicNotification(article, followedTopics)
+                        notifiedIds.add("topic_${article.id}") // ← 로컬 Set도 즉시 업데이트
                         userPrefs.addNotifiedArticleId("topic_${article.id}")
+                        userPrefs.setLastTopicTime()
                     }
                 }
             }
         }
+
+        isCheckingBreaking = false // ← 완료 후 해제
     }
 
     private fun sendBreakingNotification(article: NewsArticle) {

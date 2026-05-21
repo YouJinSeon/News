@@ -54,6 +54,9 @@ class UserPreferencesDataStore @Inject constructor(
 
         val NIGHT_NOTIFICATION = booleanPreferencesKey("night_notification")
         private val SUBSCRIBED_PRODUCT_ID = stringPreferencesKey("subscribed_product_id")
+
+        private val LAST_BREAKING_TIME = longPreferencesKey("last_breaking_time")
+        private val LAST_TOPIC_TIME = longPreferencesKey("last_topic_time")
     }
 
     val followedTopics: Flow<List<String>> = dataStore.data.map {
@@ -320,5 +323,21 @@ class UserPreferencesDataStore @Inject constructor(
             if (productId == null) it.remove(SUBSCRIBED_PRODUCT_ID)
             else it[SUBSCRIBED_PRODUCT_ID] = productId
         }
+    }
+
+    suspend fun getLastBreakingTime(): Long {
+        return dataStore.data.first()[LAST_BREAKING_TIME] ?: 0L
+    }
+
+    suspend fun setLastBreakingTime() {
+        dataStore.edit { it[LAST_BREAKING_TIME] = System.currentTimeMillis() }
+    }
+
+    suspend fun getLastTopicTime(): Long {
+        return dataStore.data.first()[LAST_TOPIC_TIME] ?: 0L
+    }
+
+    suspend fun setLastTopicTime() {
+        dataStore.edit { it[LAST_TOPIC_TIME] = System.currentTimeMillis() }
     }
 }
