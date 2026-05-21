@@ -53,6 +53,7 @@ fun SettingsScreen(
     var showTopicDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val subscribedProductId by viewModel.subscribedProductId.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.algorithmResetDone.collect {
@@ -90,22 +91,24 @@ fun SettingsScreen(
                 SettingsSection(title = "구독") {
                     if (userPlan == UserPlan.PREMIUM) {
                         SettingsItem(
-                            icon = Icons.Filled.WorkspacePremium,
-                            iconTint = Amber400,
-                            title = "프리미엄 구독 중",
-                            subtitle = "모든 기능을 무제한으로 이용 중이에요",
+                            icon = Icons.Filled.CreditCard,
+                            title = "구독 관리",
+                            subtitle = when (subscribedProductId) {
+                                "premiummonthly" -> "월간 프리미엄 구독 중"
+                                "premiumyearly"  -> "연간 프리미엄 구독 중"
+                                else              -> "구독 관리"
+                            },
+                            onClick = {
+                                val sku = subscribedProductId ?: "premiummonthly"
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://play.google.com/store/account/subscriptions?sku=$sku&package=com.teddyjs.news")
+                                )
+                                context.startActivity(intent)
+                            },
                             trailing = {
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = Amber50,
-                                ) {
-                                    Text(
-                                        "활성",
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                        fontSize = 12.sp,
-                                        color = Amber400,
-                                    )
-                                }
+                                Icon(Icons.Filled.ChevronRight, null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
                             }
                         )
                     } else {
@@ -195,21 +198,6 @@ fun SettingsScreen(
                             )
                         }
                     )
-
-                    if (BuildConfig.DEBUG) {
-                        val ctx = LocalContext.current
-                        SettingsItem(
-                            icon = Icons.Filled.BugReport,
-                            iconTint = Green400,
-                            title = "알림 테스트 (개발용)",
-                            subtitle = "아침 브리핑 + 속보 알림 즉시 발송",
-                            onClick = { viewModel.testNotification(ctx) },
-                            trailing = {
-                                Icon(Icons.Filled.ChevronRight, null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
-                            }
-                        )
-                    }
                 }
 
                 SettingsItem(
@@ -344,6 +332,50 @@ fun SettingsScreen(
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
                         }
                     )
+                    SettingsSection(title = "정보") {
+                        SettingsItem(
+                            icon = Icons.Filled.PrivacyTip,
+                            title = "개인정보처리방침",
+                            subtitle = "수집 및 이용 정책 확인",
+                            onClick = {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://youjinseon.github.io/News/privacy_policy.html")
+                                )
+                                context.startActivity(intent)
+                            },
+                            trailing = {
+                                Icon(Icons.Filled.ChevronRight, null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                            }
+                        )
+                    }
+                }
+            }
+            if (BuildConfig.DEBUG) {
+                item {
+                    SettingsSection(title = "DEBUG") {
+                        val ctx = LocalContext.current
+                        SettingsItem(
+                            icon = Icons.Filled.BugReport,
+                            iconTint = Green400,
+                            title = "알림 테스트 (개발용)",
+                            subtitle = "아침 브리핑 + 속보 알림 즉시 발송",
+                            onClick = { viewModel.testNotification(ctx) },
+                            trailing = {
+                                Icon(Icons.Filled.ChevronRight, null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                            }
+                        )
+                        SettingsItem(
+                            title = "[DEBUG] 플랜 토글",
+                            icon = Icons.Filled.WorkspacePremium,
+                            subtitle = "현재: ${userPlan.name}",
+                            onClick = {
+                                viewModel.togglePlanForDebug()
+                            }
+                        )
+                    }
                 }
             }
         }

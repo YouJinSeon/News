@@ -54,6 +54,9 @@ class SettingsViewModel @Inject constructor(
     private val _algorithmResetDone = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val algorithmResetDone = _algorithmResetDone.asSharedFlow()
 
+    val subscribedProductId = userPrefs.subscribedProductIdFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     init { loadSettings() }
 
     private fun loadSettings() {
@@ -160,6 +163,15 @@ class SettingsViewModel @Inject constructor(
             userPrefs.followedTopics.first().forEach { topic ->
                 userPrefs.unfollowTopic(topic)
             }
+        }
+    }
+
+    fun togglePlanForDebug() {
+        viewModelScope.launch {
+            val current = userPrefs.userPlan.first()
+            userPrefs.setUserPlan(
+                if (current == UserPlan.PREMIUM) UserPlan.FREE else UserPlan.PREMIUM
+            )
         }
     }
 

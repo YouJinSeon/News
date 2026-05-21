@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.util.BillingManager
+import com.teddyjs.news.util.BillingState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +31,27 @@ fun PaywallScreen(
 ) {
     val context = LocalContext.current
     val activity = context as Activity
+
+    val billingState by billingManager.billingState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(billingState) {
+        when (billingState) {
+            is BillingState.Purchased -> {
+                scope.launch {
+                    snackbarHostState.showSnackbar("프리미엄 구독이 완료되었어요 🎉")
+                }
+                delay(1500)
+                onBack()
+            }
+            is BillingState.Error -> {
+                val msg = (billingState as BillingState.Error).message
+                snackbarHostState.showSnackbar(msg)
+            }
+            else -> {}
+        }
+    }
 
     Scaffold(
         topBar = {

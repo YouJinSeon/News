@@ -53,6 +53,7 @@ class UserPreferencesDataStore @Inject constructor(
         val CURRENT_ARTICLE_ID = stringPreferencesKey("current_article_id")
 
         val NIGHT_NOTIFICATION = booleanPreferencesKey("night_notification")
+        private val SUBSCRIBED_PRODUCT_ID = stringPreferencesKey("subscribed_product_id")
     }
 
     val followedTopics: Flow<List<String>> = dataStore.data.map {
@@ -90,6 +91,10 @@ class UserPreferencesDataStore @Inject constructor(
 
     val nightNotificationFlow: Flow<Boolean> = dataStore.data.map {
         it[NIGHT_NOTIFICATION] ?: false
+    }
+
+    val subscribedProductIdFlow: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[SUBSCRIBED_PRODUCT_ID]
     }
 
     fun adUsesFlow(feature: RewardedFeature): Flow<Int> = dataStore.data.map { prefs ->
@@ -307,6 +312,13 @@ class UserPreferencesDataStore @Inject constructor(
     suspend fun setNightNotification(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[NIGHT_NOTIFICATION] = enabled
+        }
+    }
+
+    suspend fun setSubscribedProductId(productId: String?) {
+        dataStore.edit {
+            if (productId == null) it.remove(SUBSCRIBED_PRODUCT_ID)
+            else it[SUBSCRIBED_PRODUCT_ID] = productId
         }
     }
 }

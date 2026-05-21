@@ -2,6 +2,7 @@ package com.teddyjs.news.util
 
 import android.app.Activity
 import com.android.billingclient.api.*
+import com.teddyjs.news.BuildConfig
 import com.teddyjs.news.data.local.UserPreferencesDataStore
 import com.teddyjs.news.domain.model.UserPlan
 import kotlinx.coroutines.*
@@ -82,12 +83,21 @@ class BillingManager @Inject constructor(
             }
 
             val result = billingClient.queryProductDetails(params)
+            Timber.d("상품 조회 결과: ${result.billingResult.responseCode}")
+            Timber.d("상품 목록: ${result.productDetailsList?.size}개")
+            Timber.d("상품 목록 내용: ${result.productDetailsList}")
+
             if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
                 _billingState.value = BillingState.Error("상품 조회 실패")
                 return@launch
             }
 
-            val productDetails = result.productDetailsList?.firstOrNull() ?: return@launch
+            val productDetails = result.productDetailsList?.firstOrNull()
+            if (productDetails == null) {
+                Timber.e("productDetails null - 상품이 조회되지 않음")
+                _billingState.value = BillingState.Error("상품을 찾을 수 없어요. 잠시 후 다시 시도해주세요.")
+                return@launch
+            }
             val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken ?: return@launch
 
             val flowParams = BillingFlowParams.newBuilder()
@@ -117,6 +127,7 @@ class BillingManager @Inject constructor(
                     billingClient.acknowledgePurchase(ackParams)
                 }
                 userPrefs.setUserPlan(UserPlan.PREMIUM)
+                userPrefs.setSubscribedProductId(purchase.products.firstOrNull())
                 _billingState.value = BillingState.Purchased
                 Timber.d("Purchase acknowledged: ${purchase.products}")
             }
@@ -134,8 +145,10 @@ class BillingManager @Inject constructor(
         }
         if (activePurchase != null) {
             userPrefs.setUserPlan(UserPlan.PREMIUM)
-        } else {
+            userPrefs.setSubscribedProductId(activePurchase.products.firstOrNull())
+        } else if (!BuildConfig.DEBUG) {
             userPrefs.setUserPlan(UserPlan.FREE)
+            userPrefs.setSubscribedProductId(null)
         }
     }
 }

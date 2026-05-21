@@ -156,20 +156,25 @@ fun BookmarkScreen(
                                     if (keywordAdUses > 0) {
                                         viewModel.extractKeywords()
                                     } else {
-                                        AdManager.showRewardedAd(
-                                            activity = activity,
-                                            onRewarded = {
-                                                viewModel.onAdRewarded(RewardedFeature.KEYWORD_EXTRACT)
-                                                viewModel.extractKeywords()
-                                            },
-                                            onDismissed = {},
-                                            onFailed = {},
-                                        )
+                                        if (userPlan == UserPlan.PREMIUM) {
+                                            viewModel.extractKeywords()
+                                        } else {
+                                            AdManager.showRewardedAd(
+                                                activity = activity,
+                                                onRewarded = { viewModel.extractKeywords() },
+                                                onDismissed = {},
+                                                onFailed = {},
+                                            )
+                                        }
                                     }
                                 }
                             ) {
                                 Text(
-                                    if (keywordAdUses > 0) "새로고침 (${keywordAdUses}회)" else "광고 보고 추출",
+                                    when {
+                                        userPlan == UserPlan.PREMIUM -> "키워드 추출"
+                                        keywordAdUses > 0 -> "새로고침 (${keywordAdUses}회)"
+                                        else -> "광고 보고 추출"
+                                    },
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                     fontSize = 10.sp,
                                     color = Color.White,

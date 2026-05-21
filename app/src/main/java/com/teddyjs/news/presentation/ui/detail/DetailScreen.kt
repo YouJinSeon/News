@@ -229,6 +229,7 @@ fun DetailScreen(
                 isLoading = uiState.isAiLoading,
                 followedTopics = followedTopics,
                 onFollowTopic = viewModel::toggleFollowTopic,
+                userPlan = userPlan,
                 onWatchAd = {
                     AdManager.showRewardedAd(
                         activity = activity,
@@ -237,6 +238,7 @@ fun DetailScreen(
                         onFailed = { onPaywallClick() },
                     )
                 },
+                onPremiumRequest = { viewModel.onAdRewardedAndDeepAnalysis(article) },
             )
 
             HorizontalDivider()
@@ -376,14 +378,23 @@ fun AiQuickSummarySection(
 // ── AI 심층 분석 (무조건 광고 1회) ──────────────────────────
 @Composable
 fun AiDeepAnalysisSection(
-    aiSummary: String?,          // ← 추가
+    aiSummary: String?,
     investmentInsight: String?,
     keywords: List<String>,
     isLoading: Boolean,
     followedTopics: List<String>,
     onFollowTopic: (String) -> Unit,
+    userPlan: UserPlan,
     onWatchAd: () -> Unit,
+    onPremiumRequest: () -> Unit,
 ) {
+    // 프리미엄이면 광고 없이 자동 실행
+    LaunchedEffect(userPlan) {
+        if (userPlan == UserPlan.PREMIUM && aiSummary == null && !isLoading) {
+            onPremiumRequest()
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -392,7 +403,8 @@ fun AiDeepAnalysisSection(
             Icon(Icons.Filled.TrendingUp, null, modifier = Modifier.size(16.dp), tint = Green400)
             Text("AI 심층 분석", fontWeight = FontWeight.Medium, fontSize = 14.sp)
             Spacer(Modifier.weight(1f))
-            if (aiSummary == null && !isLoading) {
+            // 프리미엄이면 "광고 1회" 뱃지 숨김
+            if (aiSummary == null && !isLoading && userPlan != UserPlan.PREMIUM) {
                 Surface(shape = RoundedCornerShape(10.dp), color = Amber50) {
                     Text(
                         "광고 1회",
@@ -417,7 +429,6 @@ fun AiDeepAnalysisSection(
             }
 
             aiSummary != null -> {
-                // AI 요약
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -427,36 +438,25 @@ fun AiDeepAnalysisSection(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            "📋 요약",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
-                        Text(
-                            aiSummary,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                        )
+                        Text("📋 요약", fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Text(aiSummary, fontSize = 13.sp, lineHeight = 20.sp)
                     }
                 }
-                // 투자 시사점
                 if (investmentInsight != null) {
-                    investmentInsight?.let { insight ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            color = Green50,
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Green50,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(Icons.Filled.TrendingUp, null,
-                                    modifier = Modifier.size(16.dp), tint = Green400)
-                                Text(insight, fontSize = 12.sp, lineHeight = 18.sp,
-                                    color = Color(0xFF27500A))
-                            }
+                            Icon(Icons.Filled.TrendingUp, null,
+                                modifier = Modifier.size(16.dp), tint = Green400)
+                            Text(investmentInsight, fontSize = 12.sp, lineHeight = 18.sp,
+                                color = Color(0xFF27500A))
                         }
                     }
                 } else {
@@ -473,8 +473,6 @@ fun AiDeepAnalysisSection(
                         }
                     }
                 }
-
-                // 토픽 팔로우
                 if (keywords.isNotEmpty()) {
                     Text("토픽 팔로우", fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
@@ -495,7 +493,7 @@ fun AiDeepAnalysisSection(
 
             else -> {
                 Button(
-                    onClick = onWatchAd,
+                    onClick = if (userPlan == UserPlan.PREMIUM) onPremiumRequest else onWatchAd,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Amber50),
                     shape = RoundedCornerShape(10.dp),
@@ -503,8 +501,11 @@ fun AiDeepAnalysisSection(
                     Icon(Icons.Filled.PlayArrow, null, tint = Amber400,
                         modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("광고 1회 보고 심층 분석 보기",
-                        color = Amber400, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (userPlan == UserPlan.PREMIUM) "AI 심층 분석 보기"
+                        else "광고 1회 보고 심층 분석 보기",
+                        color = Amber400, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }
