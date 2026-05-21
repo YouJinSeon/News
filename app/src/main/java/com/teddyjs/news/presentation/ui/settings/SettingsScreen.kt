@@ -287,6 +287,16 @@ fun SettingsScreen(
             item {
                 SettingsSection(title = "기타") {
                     SettingsItem(
+                        icon = Icons.Filled.Refresh,
+                        title = "추천 알고리즘 초기화",
+                        subtitle = "검색 기록과 클릭 기록을 지워요",
+                        onClick = { viewModel.clearAlgorithmData() },
+                        trailing = {
+                            Icon(Icons.Filled.ChevronRight, null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        }
+                    )
+                    SettingsItem(
                         icon = Icons.Filled.Star,
                         iconTint = Amber400,
                         title = "앱 평가하기",
@@ -318,38 +328,26 @@ fun SettingsScreen(
                         }
                     )
                     SettingsItem(
-                        icon = Icons.Filled.Info,
-                        title = "앱 버전",
-                        subtitle = "v${BuildConfig.VERSION_NAME}",
-                    )
-                    SettingsItem(
-                        icon = Icons.Filled.Refresh,
-                        title = "추천 알고리즘 초기화",
-                        subtitle = "검색 기록과 클릭 기록을 지워요",
-                        onClick = { viewModel.clearAlgorithmData() },
+                        icon = Icons.Filled.PrivacyTip,
+                        title = "개인정보처리방침",
+                        subtitle = "수집 및 이용 정책 확인",
+                        onClick = {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://youjinseon.github.io/News/privacy_policy.html")
+                            )
+                            context.startActivity(intent)
+                        },
                         trailing = {
                             Icon(Icons.Filled.ChevronRight, null,
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
                         }
                     )
-                    SettingsSection(title = "정보") {
-                        SettingsItem(
-                            icon = Icons.Filled.PrivacyTip,
-                            title = "개인정보처리방침",
-                            subtitle = "수집 및 이용 정책 확인",
-                            onClick = {
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://youjinseon.github.io/News/privacy_policy.html")
-                                )
-                                context.startActivity(intent)
-                            },
-                            trailing = {
-                                Icon(Icons.Filled.ChevronRight, null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
-                            }
-                        )
-                    }
+                    SettingsItem(
+                        icon = Icons.Filled.Info,
+                        title = "앱 버전",
+                        subtitle = "v${BuildConfig.VERSION_NAME}",
+                    )
                 }
             }
             if (BuildConfig.DEBUG) {
