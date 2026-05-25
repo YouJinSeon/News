@@ -284,6 +284,8 @@ class UserPreferencesDataStore @Inject constructor(
             dataStore.edit { prefs ->
                 prefs[NOTIFIED_ARTICLE_IDS] = emptySet()
                 prefs[NOTIFIED_DATE] = today
+                prefs[LAST_BREAKING_TIME] = 0L
+                prefs[LAST_TOPIC_TIME] = 0L
             }
             return emptySet()
         }
