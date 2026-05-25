@@ -106,14 +106,13 @@ fun PaywallScreen(
 
             PlanCard(
                 name = "연간 프리미엄",
-                price = "₩4,900",
-                period = "/월 (연 ₩58,800)",
+                price = "₩58,800",
+                period = "/년",
                 isPopular = false,
                 features = listOf(
                     "프리미엄 전체 포함",
                     "포트폴리오 연동",
-                    "연간 브리핑 리포트 PDF",
-                    "29% 절약",
+                    "월 ₩4,900 (29% 절약)",
                 ),
                 onSubscribe = {
                     billingManager.launchPurchaseFlow(activity, BillingManager.PRODUCT_PREMIUM_YEARLY)
