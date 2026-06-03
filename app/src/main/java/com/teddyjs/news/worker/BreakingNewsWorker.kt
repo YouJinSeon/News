@@ -8,93 +8,150 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.teddyjs.news.MainActivity
+import com.teddyjs.news.R
+import com.teddyjs.news.data.local.UserPreferencesDataStore
+import com.teddyjs.news.util.appLargeIcon
 import com.teddyjs.news.data.repository.NewsRepository
-import com.teddyjs.news.domain.model.NewsCategory
+import com.teddyjs.news.domain.model.NewsArticle
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 @HiltWorker
 class BreakingNewsWorker @AssistedInject constructor(
-    @Assisted context: Context,
+    @Assisted private val context: Context,
     @Assisted workerParams: WorkerParameters,
     private val repository: NewsRepository,
+    private val userPrefs: UserPreferencesDataStore,
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
         return runCatching {
+            // 야간 알림 체크
+            val nightEnabled = userPrefs.nightNotificationFlow.first()
+            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            val isNightTime = hour >= 22 || hour < 8
+            if (!nightEnabled && isNightTime) return Result.success()
+
+            // 속보 설정 확인
+            val breakingEnabled = userPrefs.getBreakingNotification()
+            if (!breakingEnabled) return Result.success()
+
+            val now = System.currentTimeMillis()
+            val notifiedIds = userPrefs.getNotifiedArticleIds().toMutableSet()
+            val cutoff = now - 60 * 60 * 1000L
             val categories = repository.subscribedCategories.first()
+            val allArticles = repository.getNewsFeed(categories).first()
 
-            // 새 기사 fetch
-            repository.fetchAndRefreshFeed(categories)
+            // 속보(글로벌 키워드)는 서버(Cloud Functions) + FCM 'breaking' 토픽으로 일원화됨.
+            // 앱 폴링 발송은 중복 방지를 위해 제거. 아래는 사용자가 직접 '팔로우한 토픽'(개인화) 알림만 처리.
 
-            // 최근 30분 내 기사 중 속보 키워드 포함된 것 찾기
-            val cutoff = System.currentTimeMillis() - 30 * 60 * 1000L
-            val allArticles = repository.getNewsFeed(
-                NewsCategory.entries.toList()
-            ).first()
+            // 토픽 - 하루 2개 + 4시간 간격 (과도 알림으로 인한 이탈 방지)
+            val topicCount = notifiedIds.count { it.startsWith("topic_") }
+            val lastTopicTime = userPrefs.getLastTopicTime()
+            val topicCooldown = 4 * 60 * 60 * 1000L
 
-            val breakingArticles = allArticles.filter { article ->
-                article.publishedAt > cutoff &&
-                        BREAKING_KEYWORDS.any { keyword ->
-                            article.title.contains(keyword, ignoreCase = true)
+            if (topicCount < 2 && now - lastTopicTime > topicCooldown) {
+                val followedTopics = repository.getFollowedTopics()
+                if (followedTopics.isNotEmpty()) {
+                    allArticles.filter { article ->
+                        article.publishedAt > cutoff
+                                && !notifiedIds.contains("topic_${article.id}")
+                                && followedTopics.any { topic ->
+                            article.title.contains(topic, ignoreCase = true)
                         }
+                    }.take(1).forEach { article ->
+                        sendTopicNotification(article, followedTopics)
+                        notifiedIds.add("topic_${article.id}")
+                        userPrefs.addNotifiedArticleId("topic_${article.id}")
+                        userPrefs.setLastTopicTime()
+                        Timber.d("토픽 알림 발송: ${article.title}")
+                    }
+                }
             }
 
-            breakingArticles.take(3).forEach { article ->
-                sendBreakingNotification(article.title, article.summary)
-            }
-
-            Timber.d("속보 체크 완료: ${breakingArticles.size}개")
             Result.success()
         }.getOrElse {
-            Timber.e(it, "속보 워커 실패")
+            Timber.e(it, "BreakingNewsWorker 실패")
             Result.retry()
         }
     }
 
-    private fun sendBreakingNotification(title: String, summary: String) {
-        val intent = Intent(applicationContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+    private fun sendBreakingNotification(article: NewsArticle) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("articleId", article.id)
         }
         val pendingIntent = PendingIntent.getActivity(
-            applicationContext, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            context, article.id.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val notification = NotificationCompat.Builder(applicationContext, "breaking_news")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("🔴 속보 · $title")
-            .setContentText(summary.take(100))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
+        val notification = NotificationCompat.Builder(context, "breaking_news")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(appLargeIcon(context))
+            .setContentTitle("🔴 속보")
+            .setContentText(article.title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(article.title))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
 
-        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
-                as NotificationManager
-        manager.notify(title.hashCode(), notification)
+        context.getSystemService(NotificationManager::class.java)
+            .notify(article.id.hashCode(), notification)
+    }
+
+    private fun sendTopicNotification(article: NewsArticle, followedTopics: List<String>) {
+        val matchedTopic = followedTopics.firstOrNull { topic ->
+            article.title.contains(topic, ignoreCase = true)
+        } ?: return
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("articleId", article.id)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context, article.id.hashCode() + 1, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val notification = NotificationCompat.Builder(context, "breaking_news")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(appLargeIcon(context))
+            .setContentTitle("🔔 #$matchedTopic 새 소식")
+            .setContentText(article.title)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        context.getSystemService(NotificationManager::class.java)
+            .notify(article.id.hashCode() + 1, notification)
     }
 
     companion object {
-        const val WORK_NAME = "breaking_news_check"
+        const val WORK_NAME = "breaking_news"
+        val BREAKING_KEYWORDS = listOf(
+            "속보", "긴급", "대규모 사망", "폭발 사고",
+            "강진", "붕괴", "테러",
+        )
 
-        val BREAKING_KEYWORDS = listOf("속보", "긴급", "사망", "폭발", "지진", "사고", "붕괴", "테러")
         fun schedule(workManager: WorkManager) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
             val request = PeriodicWorkRequestBuilder<BreakingNewsWorker>(
-                repeatInterval = 5,
+                repeatInterval = 30,
                 repeatIntervalTimeUnit = TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
+                // 앱 실행 직후 즉시 푸시 방지 (첫 실행을 15분 뒤로)
+                .setInitialDelay(15, TimeUnit.MINUTES)
                 .build()
 
             workManager.enqueueUniquePeriodicWork(

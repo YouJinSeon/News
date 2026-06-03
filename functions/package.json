@@ -1,0 +1,13 @@
+{
+  "name": "news-functions",
+  "description": "뉴스 브리핑 - 속보 자동 발송 Cloud Functions",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "private": true
+}

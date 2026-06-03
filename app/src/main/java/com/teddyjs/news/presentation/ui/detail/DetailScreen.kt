@@ -26,8 +26,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.teddyjs.news.domain.model.RewardedFeature
 import com.teddyjs.news.domain.model.UserPlan
+import com.teddyjs.news.BuildConfig
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.admob.AdManager
+import com.teddyjs.news.presentation.ui.admob.BannerAdView
+import com.teddyjs.news.util.AnalyticsHelper
+import com.teddyjs.news.util.ShareUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,7 +49,12 @@ fun DetailScreen(
     val activity = context as Activity
     val followedTopics by viewModel.followedTopics.collectAsState()
 
-    LaunchedEffect(articleId) { viewModel.loadArticle(articleId) }
+    LaunchedEffect(articleId) {
+        viewModel.loadArticle(articleId)
+        AnalyticsHelper.log(AnalyticsHelper.ARTICLE_READ)
+        // 기사 N회 열람마다 전면 광고(프리미엄 제외)
+        AdManager.maybeShowInterstitialOnArticleOpen(activity, userPlan == UserPlan.PREMIUM)
+    }
 
     Scaffold(
         topBar = {
@@ -67,11 +76,7 @@ fun DetailScreen(
                             )
                         }
                         IconButton(onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n${article.url}")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "공유하기"))
+                            ShareUtils.shareArticle(context, article)
                         }) {
                             Icon(Icons.Filled.Share, "공유하기")
                         }
@@ -141,11 +146,17 @@ fun DetailScreen(
                 isLoading = uiState.isQuickSummaryLoading, // ← 별도 로딩
                 adUses = adUsesSummary,
                 userPlan = userPlan,
-                onRequestFree = { viewModel.requestQuickSummary(article) },
+                onRequestFree = {
+                    AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
+                    viewModel.requestQuickSummary(article)
+                },
                 onWatchAd = {
                     AdManager.showRewardedAd(
                         activity = activity,
-                        onRewarded = { viewModel.onAdRewardedAndQuickSummary(article) },
+                        onRewarded = {
+                            AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
+                            viewModel.onAdRewardedAndQuickSummary(article)
+                        },
                         onDismissed = {},
                         onFailed = {},
                     )
@@ -165,8 +176,10 @@ fun DetailScreen(
                 )
             }
 
-            if (summary.length < 100) {
-                // 짧을 때
+            val looksTruncated = summary.trimEnd().endsWith("…") ||
+                summary.trimEnd().endsWith("...")
+            if (summary.length < 100 || looksTruncated) {
+                // 짧거나 잘린 요약 (일부 매체는 RSS로 요약만 제공)
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -184,7 +197,7 @@ fun DetailScreen(
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         )
                         Text(
-                            "💡 요약 내용이 짧아요.\n전체 기사는 아래 '전체 기사 읽기'를,\n핵심 내용은 'AI 심층 분석'을 이용해보세요!",
+                            "💡 이 매체는 RSS로 요약만 제공해요.\n전체 내용은 아래 '전체 기사 읽기'로,\n핵심 정리는 'AI 심층 분석'으로 보세요!",
                             fontSize = 11.sp,
                             lineHeight = 16.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
@@ -255,6 +268,17 @@ fun DetailScreen(
                 Icon(Icons.Filled.Article, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("전체 기사 읽기", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            }
+
+            // 하단 배너 (FREE 전용, 디버그 제외)
+            if (userPlan == UserPlan.FREE && !BuildConfig.DEBUG) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "스폰서",
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                )
+                BannerAdView(modifier = Modifier.fillMaxWidth())
             }
 
             Spacer(Modifier.height(20.dp))

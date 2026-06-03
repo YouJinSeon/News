@@ -7,6 +7,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.ads.*
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.teddyjs.news.BuildConfig
@@ -16,9 +18,16 @@ object AdManager {
 
     private const val REWARDED_AD_UNIT_ID = "ca-app-pub-1691492105013314/2967206587"
     private const val BANNER_AD_UNIT_ID   = "ca-app-pub-1691492105013314/8092523294"
+    // TODO: AdMob 콘솔에서 '전면 광고' 단위를 만들어 실제 ID로 교체. 현재는 Google 테스트 ID.
+    private const val INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
 
     private var rewardedAd: RewardedAd? = null
     private var isLoading = false
+
+    private var interstitialAd: InterstitialAd? = null
+    private var interstitialLoading = false
+    private var articleOpenCount = 0
+    private const val INTERSTITIAL_EVERY = 4   // 기사 4회 열람마다 1회 노출
 
     fun preload(activity: Activity) {
         if (rewardedAd != null || isLoading) return
@@ -78,6 +87,53 @@ object AdManager {
     }
 
     fun isReady() = rewardedAd != null
+
+    // ── 전면 광고 ──────────────────────────────────────────
+    fun preloadInterstitial(activity: Activity) {
+        if (interstitialAd != null || interstitialLoading) return
+        interstitialLoading = true
+        InterstitialAd.load(
+            activity,
+            INTERSTITIAL_AD_UNIT_ID,
+            AdRequest.Builder().build(),
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    interstitialAd = ad
+                    interstitialLoading = false
+                }
+                override fun onAdFailedToLoad(error: LoadAdError) {
+                    interstitialAd = null
+                    interstitialLoading = false
+                    Timber.e("Interstitial failed: ${error.message}")
+                }
+            }
+        )
+    }
+
+    /** 기사 열람 시 호출 — N회마다 전면 광고 노출(프리미엄·디버그 제외) */
+    fun maybeShowInterstitialOnArticleOpen(activity: Activity, isPremium: Boolean) {
+        if (isPremium || BuildConfig.DEBUG) return
+        articleOpenCount++
+        if (articleOpenCount % INTERSTITIAL_EVERY != 0) {
+            preloadInterstitial(activity)
+            return
+        }
+        val ad = interstitialAd
+        if (ad == null) {
+            preloadInterstitial(activity)
+            return
+        }
+        ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdDismissedFullScreenContent() {
+                interstitialAd = null
+                preloadInterstitial(activity)
+            }
+            override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                interstitialAd = null
+            }
+        }
+        ad.show(activity)
+    }
 
     fun createBannerAd(context: Context): AdView {
         return AdView(context).apply {

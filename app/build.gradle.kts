@@ -17,8 +17,8 @@ android {
         applicationId = "com.teddyjs.news"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.0"
+        versionCode = 15
+        versionName = "1.0.1"
 
         // Gemini API Key - local.properties 에서 주입
         buildConfigField(
@@ -38,8 +38,25 @@ android {
         manifestPlaceholders["admobAppId"] = project.findProperty("ADMOB_APP_ID") ?: "ca-app-pub-1691492105013314~8284094988"
     }
 
+    signingConfigs {
+        create("release") {
+            // 비밀값은 local.properties에서 읽음(깃에 올리지 않음)
+            val storeFilePath = project.findProperty("RELEASE_STORE_FILE") as String?
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+                storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as String?
+                keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as String?
+                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as String?
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // local.properties에 RELEASE_STORE_FILE 등이 있으면 릴리스 서명 적용
+            if (project.findProperty("RELEASE_STORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -139,4 +156,10 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.functions)
+    implementation(libs.firebase.appcheck.playintegrity)
+    implementation(libs.firebase.appcheck.debug)
+    implementation(libs.install.referrer)
 }

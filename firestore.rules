@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 초대 카운트: 클라이언트는 '읽기'만 가능. 쓰기는 Cloud Function(registerReferral)만.
+    // → 클라이언트 조작 방지(Admin SDK는 규칙 무관하게 쓰기 가능).
+    match /referrals/{code} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 그 외 컬렉션(referral_devices, sent_breaking, breaking_counter 등)은 클라이언트 차단.
+    // Cloud Functions는 Admin SDK로 동작하므로 이 규칙의 영향을 받지 않음.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -17,7 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.teddyjs.news.presentation.theme.*
+import com.teddyjs.news.util.AnalyticsHelper
 import com.teddyjs.news.util.BillingManager
 import com.teddyjs.news.util.BillingState
 import kotlinx.coroutines.delay
@@ -28,13 +30,24 @@ import kotlinx.coroutines.launch
 fun PaywallScreen(
     onBack: () -> Unit,
     billingManager: BillingManager,
+    viewModel: PaywallViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val activity = context as Activity
+    val variant by viewModel.variant.collectAsState()
 
     val billingState by billingManager.billingState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val monthlyPrice by billingManager.monthlyPrice.collectAsState()
+    val yearlyPrice by billingManager.yearlyPrice.collectAsState()
+    val yearlyPerMonth by billingManager.yearlyPricePerMonth.collectAsState()
+
+    // 화면 열릴 때 상태 초기화 (paywall_view 측정은 ViewModel에서 변형과 함께 기록)
+    LaunchedEffect(Unit) {
+        billingManager.resetState()
+    }
 
     LaunchedEffect(billingState) {
         when (billingState) {
@@ -57,10 +70,20 @@ fun PaywallScreen(
         topBar = {
             TopAppBar(
                 title = {},
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.Close, "닫기") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.Close, "닫기")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
             )
-        }
+        },
+        // SnackbarHost 추가
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -72,8 +95,16 @@ fun PaywallScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             // 헤더
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.WorkspacePremium, contentDescription = null, modifier = Modifier.size(48.dp), tint = Amber400)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Filled.WorkspacePremium,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = Amber400,
+                )
                 Text("더 스마트하게 읽기", fontSize = 22.sp, fontWeight = FontWeight.Medium)
                 Text(
                     "광고 없이 모든 기능을 무제한으로",
@@ -82,10 +113,33 @@ fun PaywallScreen(
                 )
             }
 
-            // 플랜 카드
+            // A/B 변형 B: 긴급/안심 배너 (전환율 비교용)
+            if (variant == "B") {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Amber50,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text("🔥", fontSize = 18.sp)
+                        Text(
+                            "지금 시작하면 7일 무료 — 부담 없이 체험하고 마음에 안 들면 언제든 해지",
+                            fontSize = 12.sp,
+                            color = Color(0xFF8A5A00),
+                            lineHeight = 17.sp,
+                        )
+                    }
+                }
+            }
+
+            // 월간 플랜
             PlanCard(
                 name = "프리미엄",
-                price = "₩6,900",
+                price = monthlyPrice,
                 period = "/월",
                 isPopular = true,
                 features = listOf(
@@ -93,34 +147,52 @@ fun PaywallScreen(
                     "AI 심층 분석 무제한",
                     "AI 취향 분석 피드 무제한",
                     "키워드 자동 추출 무제한",
-                    "주간 리포트 매일 발행",
-                    "키워드 속보 알림",
                     "관심사 · 즐겨찾기 무제한",
                     "광고 없음",
                 ),
                 onSubscribe = {
+                    AnalyticsHelper.log(
+                        AnalyticsHelper.SUBSCRIBE_TAP,
+                        mapOf("variant" to variant, "product" to "monthly"),
+                    )
                     billingManager.launchPurchaseFlow(activity, BillingManager.PRODUCT_PREMIUM_MONTHLY)
                 },
                 ctaText = "7일 무료 체험 시작",
+                subPriceText = "체험 후 $monthlyPrice/월 · 언제든 해지",
             )
 
+            // 연간 플랜 — 월 환산가 + 절약 강조
             PlanCard(
                 name = "연간 프리미엄",
-                price = "₩58,800",
+                price = yearlyPrice,
                 period = "/년",
                 isPopular = false,
+                badgeText = "29% 절약",
                 features = listOf(
-                    "프리미엄 전체 포함",
-                    "포트폴리오 연동",
-                    "월 ₩4,900 (29% 절약)",
+                    "프리미엄 모든 혜택 그대로",
+                    "월간 대비 29% 저렴",
                 ),
                 onSubscribe = {
+                    AnalyticsHelper.log(
+                        AnalyticsHelper.SUBSCRIBE_TAP,
+                        mapOf("variant" to variant, "product" to "yearly"),
+                    )
                     billingManager.launchPurchaseFlow(activity, BillingManager.PRODUCT_PREMIUM_YEARLY)
                 },
                 ctaText = "연간 구독",
+                subPriceText = yearlyPerMonth.takeIf { it.isNotBlank() }?.let { "월 ${it}꼴 · 가장 경제적" },
             )
 
-            // 안내
+            // 구매 복원 (기기 변경/재설치 대응)
+            TextButton(onClick = { billingManager.restorePurchases() }) {
+                Text(
+                    "이미 구독 중이신가요? 구매 복원",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+            }
+
+            // 안내 문구
             Text(
                 "7일 무료 체험 후 자동 결제 · 언제든 해지 가능\nGoogle Play에서 구독 관리",
                 fontSize = 11.sp,
@@ -141,6 +213,8 @@ fun PlanCard(
     features: List<String>,
     onSubscribe: () -> Unit,
     ctaText: String,
+    subPriceText: String? = null,
+    badgeText: String? = null,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -151,24 +225,68 @@ fun PlanCard(
         else
             androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(name, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 if (isPopular) {
                     Surface(shape = RoundedCornerShape(4.dp), color = Blue50) {
-                        Text("인기", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 11.sp, color = Blue400)
+                        Text(
+                            "인기",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontSize = 11.sp,
+                            color = Blue400,
+                        )
+                    }
+                }
+                if (badgeText != null) {
+                    Surface(shape = RoundedCornerShape(4.dp), color = Green50) {
+                        Text(
+                            badgeText,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontSize = 11.sp,
+                            color = Green400,
+                        )
                     }
                 }
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(price, fontSize = 26.sp, fontWeight = FontWeight.Medium)
-                Text(period, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 2.dp))
+                Text(
+                    period,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
+            if (subPriceText != null) {
+                Text(
+                    subPriceText,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
             }
             HorizontalDivider()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 features.forEach { feat ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Green400)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = Green400,
+                        )
                         Text(feat, fontSize = 13.sp)
                     }
                 }
@@ -180,9 +298,10 @@ fun PlanCard(
                 colors = if (isPopular)
                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 else
-                    ButtonDefaults.outlinedButtonColors().let {
-                        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)
-                    },
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
             ) {
                 Text(ctaText, fontWeight = FontWeight.Medium)
             }

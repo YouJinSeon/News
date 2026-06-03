@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 자동 백업 규칙 (API 30 이하).
+  재설치/폰 교체 시(같은 구글 계정) 복원 대상:
+   - datastore: 관심사·팔로우 토픽·알림 설정·초대 코드·보너스 사용권
+   - news_db: 즐겨찾기 기사
+   - sharedpref: 첫 실행 여부 등
+-->
+<full-backup-content>
+    <include domain="file" path="datastore/" />
+    <include domain="database" path="news_db" />
+    <include domain="sharedpref" path="." />
+</full-backup-content>

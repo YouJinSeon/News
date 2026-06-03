@@ -54,6 +54,9 @@ fun MainScreen(
 ) {
     val navController = rememberNavController()
 
+    // 홈 탭 재탭 → 맨 위로 스크롤 신호
+    val homeScrollToTop = remember { kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+
     LaunchedEffect(Unit) {
         pendingArticleFlow.collect { articleId ->
             if (articleId.isNotBlank()) {
@@ -88,10 +91,15 @@ fun MainScreen(
                         NavigationBarItem(
                             selected = selected,
                             onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                                // 이미 홈에 있는데 홈 탭을 또 누르면 → 맨 위로 스크롤
+                                if (selected && item.route == Screen.Home.route) {
+                                    homeScrollToTop.tryEmit(Unit)
+                                } else {
+                                    navController.navigate(item.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
                             },
                             icon = {
@@ -121,6 +129,7 @@ fun MainScreen(
                     onArticleClick = { navController.navigate(Screen.Detail.createRoute(it)) },
                     onPaywallClick = { navController.navigate(Screen.Paywall.route) },
                     onTasteFeedClick = { navController.navigate(Screen.TasteFeed.route) },
+                    scrollToTop = homeScrollToTop,
                 )
             }
             composable(Screen.Bookmark.route) {

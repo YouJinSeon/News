@@ -8,7 +8,9 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.teddyjs.news.MainActivity
+import com.teddyjs.news.R
 import com.teddyjs.news.data.local.UserPreferencesDataStore
+import com.teddyjs.news.util.appLargeIcon
 import com.teddyjs.news.data.repository.NewsRepository
 import com.teddyjs.news.domain.model.NewsArticle
 import com.teddyjs.news.domain.model.NewsCategory
@@ -38,12 +40,16 @@ class DailyBriefingWorker @AssistedInject constructor(
             val isNightTime = hour >= 22 || hour < 8
             if (!nightEnabled && isNightTime) return Result.success()
 
-            val (title, emoji) = when (hour) {
-                in 7..9   -> "오늘의 아침 브리핑" to "☀️"
-                in 11..13 -> "점심 뉴스 브리핑" to "🌤️"
-                in 18..20 -> "오늘의 저녁 브리핑" to "🌙"
+            // slot: 시간대별 식별자. 같은 슬롯은 하루 1회만 발송 (7·8·9시 중복 방지)
+            val (slot, title, emoji) = when (hour) {
+                in 7..9   -> Triple("morning", "오늘의 아침 브리핑", "☀️")
+                in 11..13 -> Triple("lunch", "점심 뉴스 브리핑", "🌤️")
+                in 18..20 -> Triple("evening", "오늘의 저녁 브리핑", "🌙")
                 else -> return Result.success()
             }
+
+            // 이미 오늘 이 슬롯을 보냈으면 스킵
+            if (userPrefs.isBriefingSlotSent(slot)) return Result.success()
 
             val articles = repository.getNewsFeed(
                 NewsCategory.entries.toList()
@@ -55,6 +61,7 @@ class DailyBriefingWorker @AssistedInject constructor(
                 title = "$emoji $title",
                 articles = articles,
             )
+            userPrefs.markBriefingSlotSent(slot)
 
             Result.success()
         }.getOrElse {
@@ -84,7 +91,8 @@ class DailyBriefingWorker @AssistedInject constructor(
         }
 
         val notification = NotificationCompat.Builder(applicationContext, "daily_briefing")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(appLargeIcon(applicationContext))
             .setContentTitle(title)
             .setContentText(articles.firstOrNull()?.title ?: "")
             .setStyle(inboxStyle)
@@ -112,6 +120,8 @@ class DailyBriefingWorker @AssistedInject constructor(
                 repeatIntervalTimeUnit = TimeUnit.HOURS,
             )
                 .setConstraints(constraints)
+                // 앱 실행 직후 즉시 브리핑 방지 (첫 실행을 15분 뒤로)
+                .setInitialDelay(15, TimeUnit.MINUTES)
                 .build()
 
             workManager.enqueueUniquePeriodicWork(

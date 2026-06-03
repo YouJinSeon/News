@@ -98,6 +98,12 @@ androidx-compose-ui-text = { group = "androidx.compose.ui", name = "ui-text", ve
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics-ktx" }
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics-ktx" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging-ktx" }
+firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
+firebase-functions = { group = "com.google.firebase", name = "firebase-functions-ktx" }
+firebase-appcheck-playintegrity = { group = "com.google.firebase", name = "firebase-appcheck-playintegrity" }
+firebase-appcheck-debug = { group = "com.google.firebase", name = "firebase-appcheck-debug" }
+install-referrer = { group = "com.android.installreferrer", name = "installreferrer", version = "2.2" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

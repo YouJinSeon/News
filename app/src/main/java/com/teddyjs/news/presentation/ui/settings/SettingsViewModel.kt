@@ -9,7 +9,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import com.teddyjs.news.MainActivity
+import com.teddyjs.news.R
 import com.teddyjs.news.data.local.UserPreferencesDataStore
+import com.teddyjs.news.util.appLargeIcon
 import com.teddyjs.news.data.repository.NewsRepository
 import com.teddyjs.news.domain.model.NewsCategory
 import com.teddyjs.news.domain.model.UserPlan
@@ -25,7 +27,38 @@ class SettingsViewModel @Inject constructor(
     private val repository: NewsRepository,
     private val userPrefs: UserPreferencesDataStore,
     private val workManager: WorkManager,
+    private val referralManager: com.teddyjs.news.util.ReferralManager,
 ) : ViewModel() {
+
+    private val _referralCode = MutableStateFlow("")
+    val referralCode: StateFlow<String> = _referralCode.asStateFlow()
+
+    private val _inviteCount = MutableStateFlow(0)
+    val inviteCount: StateFlow<Int> = _inviteCount.asStateFlow()
+
+    /** 다음 보상까지 필요한 기준 인원 */
+    val rewardThreshold: Int = com.teddyjs.news.util.ReferralManager.REWARD_THRESHOLD
+
+    fun loadReferral() {
+        viewModelScope.launch { _referralCode.value = referralManager.referralCode() }
+        referralManager.fetchInviteCount { _inviteCount.value = it }
+    }
+
+    private val _paywallVariant = MutableStateFlow("A")
+    val paywallVariant: StateFlow<String> = _paywallVariant.asStateFlow()
+
+    fun loadPaywallVariant() {
+        viewModelScope.launch { _paywallVariant.value = userPrefs.getOrAssignPaywallVariant() }
+    }
+
+    /** 테스트용: 페이월 변형 A↔B 전환 */
+    fun togglePaywallVariant() {
+        viewModelScope.launch {
+            val next = if (userPrefs.getOrAssignPaywallVariant() == "A") "B" else "A"
+            userPrefs.setPaywallVariant(next)
+            _paywallVariant.value = next
+        }
+    }
 
     val userPlan: StateFlow<UserPlan> = repository.userPlan
         .stateIn(viewModelScope, SharingStarted.Eagerly, UserPlan.FREE)
@@ -122,7 +155,8 @@ class SettingsViewModel @Inject constructor(
         val channelId = if (title.contains("속보")) "breaking_news" else "daily_briefing"
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(appLargeIcon(context))
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

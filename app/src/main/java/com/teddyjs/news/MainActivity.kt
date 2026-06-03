@@ -1,9 +1,6 @@
 package com.teddyjs.news
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +31,7 @@ import com.teddyjs.news.data.local.UserPreferencesDataStore
 import com.teddyjs.news.presentation.navigation.MainScreen
 import com.teddyjs.news.presentation.theme.NewsAppTheme
 import com.teddyjs.news.util.BillingManager
+import com.teddyjs.news.util.ReferralManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -56,6 +54,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var userPrefs: UserPreferencesDataStore
 
+    @Inject
+    lateinit var referralManager: ReferralManager
+
     private lateinit var appUpdateManager: AppUpdateManager
     private val _showUpdateReady = MutableStateFlow(false)
     private val updateResultLauncher = registerForActivityResult(
@@ -64,12 +65,6 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode != RESULT_OK) {
             Timber.w("인앱 업데이트 취소 또는 실패")
         }
-    }
-
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        Timber.d("알림 권한: $granted")
     }
 
     private val _pendingArticleId = MutableSharedFlow<String>(
@@ -82,6 +77,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         billingManager.init(this)
+
+        // 친구 초대 귀속 + 보상 확인
+        referralManager.process()
 
         appUpdateManager = AppUpdateManagerFactory.create(this)
         checkForUpdate()
@@ -148,13 +146,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
+        // 알림 권한 요청은 온보딩 마지막 단계로 이동(OnboardingScreen).
+        // 콜드스타트에서 맥락 없이 묻지 않도록 함 → 허용률·리텐션 개선.
     }
 
     override fun onNewIntent(intent: Intent) {

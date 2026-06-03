@@ -24,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -50,6 +51,7 @@ fun HomeScreen(
     onArticleClick: (String) -> Unit,
     onPaywallClick: () -> Unit,
     onTasteFeedClick: () -> Unit,
+    scrollToTop: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -63,7 +65,7 @@ fun HomeScreen(
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.fetchWeatherData(context)
+        if (granted) viewModel.fetchWeatherData(context) // 허용 시 내 지역으로 갱신
     }
 
     val listState = rememberLazyListState(
@@ -80,13 +82,20 @@ fun HomeScreen(
         }
     }
 
+    // 홈 탭 재탭 시 맨 위로 스크롤
+    LaunchedEffect(scrollToTop) {
+        scrollToTop?.collect { listState.animateScrollToItem(0) }
+    }
+
     LaunchedEffect(Unit) {
         AdManager.preload(activity)
-        // 위치 권한 확인
+        AdManager.preloadInterstitial(activity)
+        // 날씨를 먼저 표시(권한 있으면 내 지역, 없으면 서울 기본값)
+        viewModel.fetchWeatherData(context)
+        // 대략 위치 권한이 없으면 1회 요청 (거부해도 서울 기본값으로 계속 동작)
         if (context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED) {
-            viewModel.fetchWeatherData(context)
-        } else {
+            != PackageManager.PERMISSION_GRANTED
+        ) {
             locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
     }
@@ -181,6 +190,12 @@ fun HomeScreen(
 
                     if (uiState.isLoading) {
                         items(5) { SkeletonNewsCard() }
+                        return@LazyColumn
+                    }
+
+                    // 빈/실패 상태 — 불러온 기사가 없을 때
+                    if (displayArticles.isEmpty()) {
+                        item { EmptyFeed(onRetry = { viewModel.refresh() }) }
                         return@LazyColumn
                     }
 
@@ -291,6 +306,11 @@ fun HomeScreen(
                         )
                     }
 
+                    // 피드 중간 인라인 배너 (FREE 전용, 디버그 제외)
+                    if (userPlan == UserPlan.FREE && !BuildConfig.DEBUG) {
+                        item { InFeedBannerAd() }
+                    }
+
                     item {
                         if (displayArticles.size > 6) {
                             SectionHeader(title = "🕐 최신 뉴스")
@@ -373,6 +393,59 @@ fun HomeScreen(
     }
 }
 
+// ── 빈/실패 상태 ───────────────────────────────────────────
+@Composable
+fun EmptyFeed(onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 80.dp, start = 32.dp, end = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(
+            Icons.Outlined.Newspaper,
+            contentDescription = null,
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+        )
+        Text(
+            "표시할 뉴스가 없어요",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            "네트워크 상태를 확인하고 다시 시도해 주세요",
+            fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        )
+        Button(onClick = onRetry, shape = RoundedCornerShape(10.dp)) {
+            Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("다시 시도", fontSize = 14.sp)
+        }
+    }
+}
+
+// ── 피드 인라인 배너 광고 ──────────────────────────────────
+@Composable
+fun InFeedBannerAd() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Text(
+            "스폰서",
+            fontSize = 9.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            modifier = Modifier.padding(start = 2.dp, bottom = 2.dp),
+        )
+        BannerAdView(modifier = Modifier.fillMaxWidth())
+    }
+}
+
 // ── 섹션 헤더 ──────────────────────────────────────────────
 @Composable
 fun SectionHeader(title: String) {
@@ -395,6 +468,7 @@ fun HeadlineCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (article.viewCount > 0) 0.5f else 1f) // 읽은 기사 흐리게
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
@@ -507,6 +581,7 @@ fun RankedNewsCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (article.viewCount > 0) 0.5f else 1f) // 읽은 기사 흐리게
             .padding(horizontal = 12.dp, vertical = 3.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -927,6 +1002,7 @@ fun ImageNewsCard(article: NewsArticle, onClick: () -> Unit, onBookmark: () -> U
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (article.viewCount > 0) 0.5f else 1f) // 읽은 기사 흐리게
             .padding(horizontal = 12.dp, vertical = 4.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -997,6 +1073,7 @@ fun TextNewsCard(article: NewsArticle, onClick: () -> Unit, onBookmark: () -> Un
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (article.viewCount > 0) 0.5f else 1f) // 읽은 기사 흐리게
             .padding(horizontal = 12.dp, vertical = 3.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),

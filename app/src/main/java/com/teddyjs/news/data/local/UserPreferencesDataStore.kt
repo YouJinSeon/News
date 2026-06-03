@@ -57,6 +57,93 @@ class UserPreferencesDataStore @Inject constructor(
 
         private val LAST_BREAKING_TIME = longPreferencesKey("last_breaking_time")
         private val LAST_TOPIC_TIME = longPreferencesKey("last_topic_time")
+
+        // 정기 브리핑 슬롯 중복 발송 방지 (아침/점심/저녁 각 1회)
+        private val BRIEFING_SENT_SLOTS = stringSetPreferencesKey("briefing_sent_slots")
+        private val BRIEFING_SENT_DATE = stringPreferencesKey("briefing_sent_date")
+
+        // 초대 보상
+        private val MY_REFERRAL_CODE = stringPreferencesKey("my_referral_code")
+        private val REFERRAL_ATTRIBUTION_DONE = booleanPreferencesKey("referral_attribution_done")
+        private val REFERRAL_CLAIMED_MILESTONES = intPreferencesKey("referral_claimed_milestones")
+        // 초대 보상으로 받은 AI 사용권 (매일 리셋에 영향받지 않는 별도 풀)
+        private val BONUS_AI_SUMMARY = intPreferencesKey("bonus_ai_summary")
+
+        // 페이월 A/B 변형 (최초 1회 배정 후 고정)
+        private val PAYWALL_VARIANT = stringPreferencesKey("paywall_variant")
+    }
+
+    /** 페이월 A/B 변형 배정(50:50, 최초 1회 후 고정) */
+    suspend fun getOrAssignPaywallVariant(): String {
+        val existing = dataStore.data.first()[PAYWALL_VARIANT]
+        if (!existing.isNullOrBlank()) return existing
+        val v = if ((0..1).random() == 0) "A" else "B"
+        dataStore.edit { it[PAYWALL_VARIANT] = v }
+        return v
+    }
+
+    /** 페이월 변형 강제 설정(테스트용) */
+    suspend fun setPaywallVariant(v: String) {
+        dataStore.edit { it[PAYWALL_VARIANT] = v }
+    }
+
+    // ── 초대 보상 ──────────────────────────────────────────
+    /** 내 초대 코드(최초 1회 생성, 이후 고정) */
+    suspend fun getOrCreateReferralCode(): String {
+        val existing = dataStore.data.first()[MY_REFERRAL_CODE]
+        if (!existing.isNullOrBlank()) return existing
+        val code = "u" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+        dataStore.edit { it[MY_REFERRAL_CODE] = code }
+        return code
+    }
+
+    suspend fun isAttributionDone(): Boolean =
+        dataStore.data.first()[REFERRAL_ATTRIBUTION_DONE] ?: false
+
+    suspend fun markAttributionDone() {
+        dataStore.edit { it[REFERRAL_ATTRIBUTION_DONE] = true }
+    }
+
+    suspend fun getClaimedMilestones(): Int =
+        dataStore.data.first()[REFERRAL_CLAIMED_MILESTONES] ?: 0
+
+    suspend fun setClaimedMilestones(n: Int) {
+        dataStore.edit { it[REFERRAL_CLAIMED_MILESTONES] = n }
+    }
+
+    /** 초대 보상 지급: 보너스 AI 사용권 충전 (매일 리셋 무관) */
+    suspend fun grantReferralReward(aiUses: Int) {
+        dataStore.edit { prefs ->
+            prefs[BONUS_AI_SUMMARY] = (prefs[BONUS_AI_SUMMARY] ?: 0) + aiUses
+        }
+    }
+
+    private fun todayString(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+
+    /** 오늘 해당 브리핑 슬롯(morning/lunch/evening)이 이미 발송됐는지 */
+    suspend fun isBriefingSlotSent(slot: String): Boolean {
+        val prefs = dataStore.data.first()
+        val savedDate = prefs[BRIEFING_SENT_DATE] ?: ""
+        if (savedDate != todayString()) return false
+        return (prefs[BRIEFING_SENT_SLOTS] ?: emptySet()).contains(slot)
+    }
+
+    /** 브리핑 슬롯 발송 기록 (날짜 바뀌면 자동 초기화) */
+    suspend fun markBriefingSlotSent(slot: String) {
+        val today = todayString()
+        dataStore.edit { prefs ->
+            val savedDate = prefs[BRIEFING_SENT_DATE] ?: ""
+            val current = if (savedDate == today) {
+                (prefs[BRIEFING_SENT_SLOTS] ?: emptySet()).toMutableSet()
+            } else {
+                mutableSetOf()
+            }
+            current.add(slot)
+            prefs[BRIEFING_SENT_SLOTS] = current
+            prefs[BRIEFING_SENT_DATE] = today
+        }
     }
 
     val followedTopics: Flow<List<String>> = dataStore.data.map {
@@ -102,7 +189,10 @@ class UserPreferencesDataStore @Inject constructor(
 
     fun adUsesFlow(feature: RewardedFeature): Flow<Int> = dataStore.data.map { prefs ->
         checkAndResetDailyIfNeeded(prefs)
-        prefs[feature.toKey()] ?: 0
+        val base = prefs[feature.toKey()] ?: 0
+        // AI 요약은 초대 보상 보너스 풀도 합산해서 표시
+        val bonus = if (feature == RewardedFeature.AI_SUMMARY) (prefs[BONUS_AI_SUMMARY] ?: 0) else 0
+        base + bonus
     }
 
     suspend fun consumeAdUse(feature: RewardedFeature): Boolean {
@@ -113,6 +203,13 @@ class UserPreferencesDataStore @Inject constructor(
             if (current > 0) {
                 prefs[feature.toKey()] = current - 1
                 consumed = true
+            } else if (feature == RewardedFeature.AI_SUMMARY) {
+                // 일일 사용권 소진 시 초대 보상 보너스에서 차감
+                val bonus = prefs[BONUS_AI_SUMMARY] ?: 0
+                if (bonus > 0) {
+                    prefs[BONUS_AI_SUMMARY] = bonus - 1
+                    consumed = true
+                }
             }
         }
         return consumed

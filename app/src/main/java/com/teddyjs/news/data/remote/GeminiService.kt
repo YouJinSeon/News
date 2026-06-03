@@ -21,9 +21,31 @@ class GeminiService @Inject constructor(
 
     private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
+    companion object {
+        /**
+         * 브랜드 보이스(페르소나). 모든 AI 응답에 일관된 말투를 입혀
+         * "정 드는" 서비스 경험을 만든다. (리텐션 차별화 요소)
+         * - 친근하지만 신뢰감 있는 뉴스 친구
+         * - 군더더기 없이 핵심만, 어려운 용어는 쉽게 풀어줌
+         * - 과장/낚시 금지, 사실 기반
+         */
+        private val PERSONA = """
+            너는 '뉴스 브리핑'의 AI 에디터야.
+            성격: 똑똑하지만 잘난척하지 않는, 친근하고 믿음직한 뉴스 친구.
+            말투 규칙:
+            - 핵심만 간결하게. 군더더기·미사여구 금지.
+            - 어려운 경제·시사 용어는 쉽게 풀어서.
+            - 과장하거나 낚시성으로 쓰지 말 것. 철저히 사실 기반.
+            - 따뜻하지만 담백한 존댓말 톤.
+            아래 작업을 이 페르소나로 수행해.
+        """.trimIndent()
+    }
+
     suspend fun summarizeArticle(title: String, content: String): GeminiResult =
         withContext(Dispatchers.IO) {
             val prompt = """
+                $PERSONA
+
                 다음 뉴스 기사를 분석해서 JSON 형식으로만 응답해줘. 다른 텍스트 없이 순수 JSON만.
                 
                 기사 제목: $title
@@ -78,6 +100,8 @@ class GeminiService @Inject constructor(
         val keywords = clickedKeywords.joinToString(", ")
 
         val prompt = """
+        $PERSONA
+
         다음은 사용자의 뉴스 소비 패턴이야.
         
         즐겨찾기한 기사 제목:
@@ -116,6 +140,8 @@ class GeminiService @Inject constructor(
         val titles = bookmarkedTitles.take(30).joinToString("\n- ", prefix = "- ")
         val dist = categoryDistribution.entries.joinToString(", ") { "${it.key}: ${it.value}%" }
         val prompt = """
+            $PERSONA
+
             사용자의 이번 주 뉴스 소비 패턴을 분석해줘.
             
             카테고리 분포: $dist
@@ -180,6 +206,8 @@ class GeminiService @Inject constructor(
     suspend fun quickSummarize(title: String, content: String): String? =
         withContext(Dispatchers.IO) {
             val prompt = """
+            $PERSONA
+
             다음 뉴스를 2문장으로 간략하게 요약해줘. 순수 텍스트만 반환해.
             
             제목: $title

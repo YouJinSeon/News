@@ -120,7 +120,7 @@ class NaverNewsService @Inject constructor(
             ArticleEntity(
                 id = md5(link),
                 title = title,
-                summary = description.take(500),
+                summary = description.take(3000),
                 url = link,
                 imageUrl = null,
                 source = source,

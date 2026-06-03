@@ -36,15 +36,57 @@ class NewsRepository @Inject constructor(
 
     fun getNewsFeed(categories: List<NewsCategory>): Flow<List<NewsArticle>> {
         val categoryNames = categories.map { it.name }
-        return articleDao.getArticlesByCategories(categoryNames).map { entities ->
+        // 행동 기반 개인화: 읽은 기사 키워드 + 팔로우 토픽 + 최신성으로 가중 정렬.
+        // (쓸수록 추천이 똑똑해지는 체감 → 리텐션 차별화)
+        return combine(
+            articleDao.getArticlesByCategories(categoryNames),
+            userPrefs.clickedKeywordsFlow,
+            userPrefs.followedTopics,
+        ) { entities, clickedKeywords, followedTopics ->
+            val now = System.currentTimeMillis()
+            // 자주 클릭한 키워드일수록 가중치 ↑ (빈도 기반)
+            val keywordWeight = clickedKeywords.groupingBy { it }.eachCount()
             entities.map { it.toDomain() }
+                .sortedByDescending { article ->
+                    personalizedScore(article, now, keywordWeight, followedTopics)
+                }
         }
+    }
+
+    private fun personalizedScore(
+        article: NewsArticle,
+        now: Long,
+        keywordWeight: Map<String, Int>,
+        followedTopics: List<String>,
+    ): Double {
+        // 최신성: 기본 점수의 큰 축 (신선한 뉴스가 우선)
+        val recencyScore = when {
+            now - article.publishedAt < 60 * 60 * 1000L -> 50.0
+            now - article.publishedAt < 3 * 60 * 60 * 1000L -> 35.0
+            now - article.publishedAt < 6 * 60 * 60 * 1000L -> 20.0
+            now - article.publishedAt < 24 * 60 * 60 * 1000L -> 10.0
+            else -> 3.0
+        }
+        // 관심 키워드 매칭 (빈도 가중, 과도한 편향 방지 위해 상한)
+        val interestScore = keywordWeight.entries.sumOf { (kw, cnt) ->
+            if (kw.length >= 2 && article.title.contains(kw, ignoreCase = true)) {
+                cnt.coerceAtMost(5) * 4.0
+            } else 0.0
+        }
+        // 팔로우한 토픽 매칭 (가장 강한 시그널)
+        val topicScore = followedTopics.count { topic ->
+            article.title.contains(topic, ignoreCase = true)
+        } * 12.0
+        return recencyScore + interestScore + topicScore
     }
 
     fun getBookmarks(): Flow<List<NewsArticle>> =
         articleDao.getBookmarkedArticles().map { it.map { e -> e.toDomain() } }
 
-    suspend fun fetchAndRefreshFeed(categories: List<NewsCategory>) {
+    suspend fun fetchAndRefreshFeed(
+        categories: List<NewsCategory>,
+        replaceExisting: Boolean = true,
+    ) {
         val newArticles = mutableListOf<ArticleEntity>()
 
         categories.forEach { category ->
@@ -83,19 +125,26 @@ class NewsRepository @Inject constructor(
                     !naverMap.containsKey(key)
                 }
 
+                // 최종 중복 제거: RSS 소스끼리도 같은 기사가 여러 매체에서 들어오므로
+                // 정규화 제목 키로 distinct 처리(네이버 우선). 너무 짧은/빈 제목은 제외.
                 val combined = (updatedNaverMap.values + rssOnly)
+                    .distinctBy { it.title.replace(Regex("[^가-힣a-zA-Z0-9]"), "").take(20) }
+                    .filter { it.title.replace(Regex("[^가-힣a-zA-Z0-9]"), "").length >= 6 }
                     .sortedByDescending { it.publishedAt }
 
                 newArticles.addAll(combined)
-                Timber.d("${category.name}: 네이버 ${naverArticles.size}개 + RSS전용 ${rssOnly.size}개")
+                Timber.d("${category.name}: 네이버 ${naverArticles.size}개 + RSS전용 ${rssOnly.size}개 → 중복제거 후 ${combined.size}개")
             }.onFailure { Timber.e(it, "fetch failed: ${category.name}") }
         }
 
         if (newArticles.isNotEmpty()) {
-            val currentArticleId = userPrefs.getCurrentArticleId() ?: ""
-            articleDao.deleteAllExceptBookmarked(currentArticleId)
+            // replaceExisting=true: 전체 갱신(오래된 것 정리). false: 다른 카테고리는 보존하고 추가만.
+            if (replaceExisting) {
+                val currentArticleId = userPrefs.getCurrentArticleId() ?: ""
+                articleDao.deleteAllExceptBookmarked(currentArticleId)
+            }
             articleDao.upsertArticles(newArticles)
-            Timber.d("총 ${newArticles.size}개 저장 완료")
+            Timber.d("총 ${newArticles.size}개 저장 완료 (replaceExisting=$replaceExisting)")
 
             updateWidgetFromRepo()
         }

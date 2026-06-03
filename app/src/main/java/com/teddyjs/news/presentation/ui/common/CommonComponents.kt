@@ -268,10 +268,8 @@ data class WeatherInfo(
 suspend fun fetchWeather(context: Context): WeatherInfo? =
     withContext(Dispatchers.IO) {
         runCatching {
-            // 위치 가져오기
-            val location = getLastLocation(context) ?: return@runCatching null
-
-            // 위치 못 가져오면 서울 기본값
+            // 위치 권한이 없으면(또는 못 가져오면) null → 서울 기본값으로 진행
+            val location = getLastLocation(context)
             val lat = location?.latitude ?: 37.5665
             val lon = location?.longitude ?: 126.9780
 

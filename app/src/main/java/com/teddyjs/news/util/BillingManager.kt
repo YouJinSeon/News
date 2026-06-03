@@ -8,6 +8,8 @@ import com.teddyjs.news.domain.model.UserPlan
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,8 +19,8 @@ class BillingManager @Inject constructor(
     private val userPrefs: UserPreferencesDataStore,
 ) {
     companion object {
-        const val PRODUCT_PREMIUM_MONTHLY = "premiummonthly"   // 월 6,900원
-        const val PRODUCT_PREMIUM_YEARLY = "premiumyearly"     // 연 58,800원
+        const val PRODUCT_PREMIUM_MONTHLY = "premiummonthly"
+        const val PRODUCT_PREMIUM_YEARLY = "premiumyearly"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -30,12 +32,25 @@ class BillingManager @Inject constructor(
     private var reconnectJob: Job? = null
     private lateinit var billingClientStateListener: BillingClientStateListener
 
+    private val _monthlyPrice = MutableStateFlow<String>("₩6,900")
+    private val _yearlyPrice = MutableStateFlow<String>("₩58,800")
+    private val _yearlyPricePerMonth = MutableStateFlow<String>("")
+    val monthlyPrice = _monthlyPrice.asStateFlow()
+    val yearlyPrice = _yearlyPrice.asStateFlow()
+    /** 연간 구독의 월 환산가 (실시간 micros 기반 계산, 하드코딩 아님) */
+    val yearlyPricePerMonth = _yearlyPricePerMonth.asStateFlow()
+
     fun init(activity: Activity) {
         val listener = object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     Timber.d("Billing connected")
-                    scope.launch { queryExistingPurchases() }
+                    scope.launch {
+                        queryExistingPurchases()
+                        queryProductPrices()
+                    }
+                } else {
+                    Timber.e("Billing setup failed: ${result.responseCode}")
                 }
             }
             override fun onBillingServiceDisconnected() {
@@ -43,7 +58,9 @@ class BillingManager @Inject constructor(
                 reconnectJob?.cancel()
                 reconnectJob = scope.launch {
                     delay(2000)
-                    billingClient.startConnection(this@BillingManager.billingClientStateListener)
+                    if (::billingClient.isInitialized) {
+                        billingClient.startConnection(billingClientStateListener)
+                    }
                 }
             }
         }
@@ -53,6 +70,12 @@ class BillingManager @Inject constructor(
             .setListener { result, purchases ->
                 if (result.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
                     purchases.forEach { handlePurchase(it) }
+                } else if (result.responseCode == BillingClient.BillingResponseCode.USER_CANCELED) {
+                    Timber.d("사용자가 결제를 취소했습니다.")
+                    _billingState.value = BillingState.Idle
+                } else {
+                    Timber.e("결제 실패: ${result.responseCode}")
+                    _billingState.value = BillingState.Error("결제에 실패했어요. 다시 시도해주세요.")
                 }
             }
             .enablePendingPurchases()
@@ -61,8 +84,25 @@ class BillingManager @Inject constructor(
         billingClient.startConnection(listener)
     }
 
+    fun resetState() {
+        _billingState.value = BillingState.Idle
+    }
+
     fun launchPurchaseFlow(activity: Activity, productId: String) {
+        AnalyticsHelper.log(AnalyticsHelper.SUBSCRIBE_START, mapOf("product" to productId))
+        // 이전 에러 상태 초기화
+        _billingState.value = BillingState.Idle
+
         scope.launch {
+            Timber.d("구매 시도: $productId")
+            Timber.d("BillingClient 연결 상태: ${billingClient.isReady}")
+
+            if (!billingClient.isReady) {
+                Timber.e("BillingClient 준비 안됨!")
+                _billingState.value = BillingState.Error("결제 서비스 연결 중입니다. 잠시 후 다시 시도해주세요.")
+                return@launch
+            }
+
             val params = QueryProductDetailsParams.newBuilder()
                 .setProductList(
                     listOf(
@@ -73,22 +113,13 @@ class BillingManager @Inject constructor(
                     )
                 ).build()
 
-            Timber.d("구매 시도: $productId")
-            Timber.d("BillingClient 연결 상태: ${billingClient.isReady}")
-
-            if (!billingClient.isReady) {
-                Timber.e("BillingClient 준비 안됨!")
-                _billingState.value = BillingState.Error("결제 서비스 연결 중입니다. 잠시 후 다시 시도해주세요.")
-                return@launch
-            }
-
             val result = billingClient.queryProductDetails(params)
             Timber.d("상품 조회 결과: ${result.billingResult.responseCode}")
             Timber.d("상품 목록: ${result.productDetailsList?.size}개")
-            Timber.d("상품 목록 내용: ${result.productDetailsList}")
 
             if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-                _billingState.value = BillingState.Error("상품 조회 실패")
+                Timber.e("상품 조회 실패: ${result.billingResult.responseCode}")
+                _billingState.value = BillingState.Error("상품 정보를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
                 return@launch
             }
 
@@ -98,7 +129,13 @@ class BillingManager @Inject constructor(
                 _billingState.value = BillingState.Error("상품을 찾을 수 없어요. 잠시 후 다시 시도해주세요.")
                 return@launch
             }
-            val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken ?: return@launch
+
+            val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
+            if (offerToken == null) {
+                Timber.e("offerToken null")
+                _billingState.value = BillingState.Error("결제 정보를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
+                return@launch
+            }
 
             val flowParams = BillingFlowParams.newBuilder()
                 .setProductDetailsParamsList(
@@ -111,7 +148,11 @@ class BillingManager @Inject constructor(
                 ).build()
 
             withContext(Dispatchers.Main) {
-                billingClient.launchBillingFlow(activity, flowParams)
+                val billingResult = billingClient.launchBillingFlow(activity, flowParams)
+                if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+                    Timber.e("launchBillingFlow 실패: ${billingResult.responseCode}")
+                    _billingState.value = BillingState.Error("결제창을 열 수 없어요. 잠시 후 다시 시도해주세요.")
+                }
             }
         }
     }
@@ -119,18 +160,23 @@ class BillingManager @Inject constructor(
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
             scope.launch {
-                // 구매 확인 (Acknowledge)
                 if (!purchase.isAcknowledged) {
                     val ackParams = AcknowledgePurchaseParams.newBuilder()
                         .setPurchaseToken(purchase.purchaseToken)
                         .build()
-                    billingClient.acknowledgePurchase(ackParams)
+                    val ackResult = billingClient.acknowledgePurchase(ackParams)
+                    if (ackResult.responseCode != BillingClient.BillingResponseCode.OK) {
+                        Timber.e("Acknowledge 실패: ${ackResult.responseCode}")
+                    }
                 }
                 userPrefs.setUserPlan(UserPlan.PREMIUM)
                 userPrefs.setSubscribedProductId(purchase.products.firstOrNull())
                 _billingState.value = BillingState.Purchased
                 Timber.d("Purchase acknowledged: ${purchase.products}")
             }
+        } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
+            Timber.d("구매 대기 중: ${purchase.products}")
+            _billingState.value = BillingState.Error("결제가 대기 중이에요. Google Play에서 확인해주세요.")
         }
     }
 
@@ -146,9 +192,79 @@ class BillingManager @Inject constructor(
         if (activePurchase != null) {
             userPrefs.setUserPlan(UserPlan.PREMIUM)
             userPrefs.setSubscribedProductId(activePurchase.products.firstOrNull())
+            Timber.d("기존 구독 확인: ${activePurchase.products}")
         } else if (!BuildConfig.DEBUG) {
             userPrefs.setUserPlan(UserPlan.FREE)
             userPrefs.setSubscribedProductId(null)
+            Timber.d("구독 없음 → FREE")
+        }
+    }
+
+    private suspend fun queryProductPrices() {
+        val params = QueryProductDetailsParams.newBuilder()
+            .setProductList(
+                listOf(
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(PRODUCT_PREMIUM_MONTHLY)
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build(),
+                    QueryProductDetailsParams.Product.newBuilder()
+                        .setProductId(PRODUCT_PREMIUM_YEARLY)
+                        .setProductType(BillingClient.ProductType.SUBS)
+                        .build(),
+                )
+            )
+            .build()
+
+        val result = billingClient.queryProductDetails(params)
+        result.productDetailsList?.forEach { product ->
+            // 무료체험(₩0) 단계를 건너뛰고 실제 유료 단계를 선택
+            val paidPhase = product.subscriptionOfferDetails
+                ?.flatMap { it.pricingPhases.pricingPhaseList }
+                ?.firstOrNull { it.priceAmountMicros > 0 }
+                ?: return@forEach
+            val price = paidPhase.formattedPrice
+
+            when (product.productId) {
+                PRODUCT_PREMIUM_MONTHLY -> {
+                    _monthlyPrice.value = price
+                    Timber.d("월간 가격: $price")
+                }
+                PRODUCT_PREMIUM_YEARLY -> {
+                    _yearlyPrice.value = price
+                    // 월 환산가 = 연간가 / 12 (실시간 micros 기반)
+                    _yearlyPricePerMonth.value = formatMicros(
+                        paidPhase.priceAmountMicros / 12,
+                        paidPhase.priceCurrencyCode,
+                    )
+                    Timber.d("연간 가격: $price (월환산 ${_yearlyPricePerMonth.value})")
+                }
+            }
+        }
+    }
+
+    private fun formatMicros(micros: Long, currencyCode: String): String = runCatching {
+        val amount = micros / 1_000_000.0
+        val nf = java.text.NumberFormat.getCurrencyInstance()
+        nf.currency = java.util.Currency.getInstance(currencyCode)
+        if (currencyCode == "KRW") nf.maximumFractionDigits = 0
+        nf.format(amount)
+    }.getOrDefault("")
+
+    /** 구매 복원 — 기기 변경/재설치 후 기존 구독을 되살림 */
+    fun restorePurchases() {
+        scope.launch {
+            if (!billingClient.isReady) {
+                _billingState.value = BillingState.Error("결제 서비스 연결 중이에요. 잠시 후 다시 시도해주세요.")
+                return@launch
+            }
+            queryExistingPurchases()
+            val plan = userPrefs.userPlan.first()
+            if (plan == UserPlan.PREMIUM) {
+                _billingState.value = BillingState.Purchased
+            } else {
+                _billingState.value = BillingState.Error("복원할 구독이 없어요.")
+            }
         }
     }
 }

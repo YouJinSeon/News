@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  알림 전용 아이콘(상태바). 단색 실루엣만 허용되므로 흰색 + 투명 배경.
+  앱 로고를 단순화: 신문 카드(가운데 내용 줄) + 우상단 AI 뱃지 점.
+  작은 크기에서도 '뉴스 브리핑' 로고로 인지되도록 디자인.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 신문 카드 + 내용 줄(구멍). evenOdd로 줄을 투명 처리 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M5,5 H13 a2,2 0 0 1 2,2 V19 a2,2 0 0 1 -2,2 H5 a2,2 0 0 1 -2,-2 V7 a2,2 0 0 1 2,-2 Z
+                          M5.5,8 H12.5 V10.5 H5.5 Z
+                          M5.5,12 H12.5 V13.2 H5.5 Z
+                          M5.5,14.6 H11 V15.8 H5.5 Z
+                          M5.5,17.2 H12.5 V18.4 H5.5 Z" />
+
+    <!-- 우상단 AI 뱃지 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18.5,5 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z" />
+</vector>

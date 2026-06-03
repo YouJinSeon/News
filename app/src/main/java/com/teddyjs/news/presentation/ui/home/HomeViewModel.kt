@@ -73,7 +73,7 @@ class HomeViewModel @Inject constructor(
         observeFeed()
         refreshMissingCategories()
         fetchStocks()
-//        startAutoRefresh()
+        startAutoRefresh()   // 앱 켜둔 동안 10분마다 피드 자동 갱신
         RssSyncWorker.schedule(workManager)
     }
 
@@ -212,13 +212,11 @@ class HomeViewModel @Inject constructor(
                 repository.getNewsFeed(listOf(category)).first().isNotEmpty()
             }
 
-            // 기사가 하나도 없을 때만 fetch
+            // 기사가 하나도 없을 때만 fetch (구독 카테고리 전체를 한 번에 → 카테고리별 덮어쓰기 방지)
             if (!hasAnyArticles) {
                 _uiState.update { it.copy(isRefreshing = true) }
-                subscribedCategories.forEach { category ->
-                    runCatching {
-                        repository.fetchAndRefreshFeed(listOf(category))
-                    }
+                runCatching {
+                    repository.fetchAndRefreshFeed(subscribedCategories)
                 }
                 _uiState.update { it.copy(isRefreshing = false) }
             }
@@ -236,7 +234,12 @@ class HomeViewModel @Inject constructor(
             if (category != null) {
                 val existing = repository.getNewsFeed(listOf(category)).first()
                 if (existing.isEmpty()) {
-                    repository.fetchAndRefreshFeed(listOf(category))
+                    // 로딩바 표시 + 다른 카테고리는 보존(replaceExisting=false)
+                    _uiState.update { it.copy(isRefreshing = true) }
+                    runCatching {
+                        repository.fetchAndRefreshFeed(listOf(category), replaceExisting = false)
+                    }
+                    _uiState.update { it.copy(isRefreshing = false) }
                 }
             }
         }

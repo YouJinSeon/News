@@ -29,6 +29,7 @@ import com.teddyjs.news.domain.model.UserPlan
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.settings.SettingsViewModel
 import com.teddyjs.news.util.BillingManager
+import com.teddyjs.news.util.ShareUtils
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +55,14 @@ fun SettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val subscribedProductId by viewModel.subscribedProductId.collectAsState()
+    val referralCode by viewModel.referralCode.collectAsState()
+    val inviteCount by viewModel.inviteCount.collectAsState()
+    val paywallVariant by viewModel.paywallVariant.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadReferral()
+        viewModel.loadPaywallVariant()
+    }
 
     LaunchedEffect(Unit) {
         viewModel.algorithmResetDone.collect {
@@ -116,7 +125,6 @@ fun SettingsScreen(
                             icon = Icons.Filled.WorkspacePremium,
                             iconTint = Amber400,
                             title = "프리미엄으로 업그레이드",
-                            subtitle = "월 6,900원 · 7일 무료 체험",
                             onClick = onPaywallClick,
                             trailing = {
                                 Icon(Icons.Filled.ChevronRight, null,
@@ -283,6 +291,25 @@ fun SettingsScreen(
                 }
             }
 
+            // ── 친구 초대 ──────────────────────────────────
+            item {
+                val remain = viewModel.rewardThreshold - (inviteCount % viewModel.rewardThreshold)
+                SettingsSection(title = "친구 초대") {
+                    SettingsItem(
+                        icon = Icons.Filled.Share,
+                        iconTint = Green400,
+                        title = "친구 초대하고 AI 사용권 받기",
+                        subtitle = "지금까지 ${inviteCount}명 초대 · ${viewModel.rewardThreshold}명마다 AI 사용권 10회" +
+                            if (inviteCount > 0) " (다음 보상까지 ${remain}명)" else "",
+                        onClick = { ShareUtils.inviteApp(context, referralCode) },
+                        trailing = {
+                            Icon(Icons.Filled.ChevronRight, null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        }
+                    )
+                }
+            }
+
             // ── 기타 ──────────────────────────────────────
             item {
                 SettingsSection(title = "기타") {
@@ -371,6 +398,19 @@ fun SettingsScreen(
                             subtitle = "현재: ${userPlan.name}",
                             onClick = {
                                 viewModel.togglePlanForDebug()
+                            }
+                        )
+                        SettingsItem(
+                            title = "[실험] 페이월 변형 전환",
+                            icon = Icons.Filled.Tune,
+                            iconTint = Blue400,
+                            subtitle = "현재: $paywallVariant " +
+                                (if (paywallVariant == "B") "(🔥 긴급 배너형)" else "(기본형)") +
+                                " · 눌러서 전환 후 '프리미엄 업그레이드' 열어 확인",
+                            onClick = { viewModel.togglePaywallVariant() },
+                            trailing = {
+                                Icon(Icons.Filled.SwapHoriz, null,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
                             }
                         )
                     }
