@@ -4,12 +4,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.work.WorkManager
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.teddyjs.news.MainActivity
 import com.teddyjs.news.R
 import com.teddyjs.news.util.appLargeIcon
+import com.teddyjs.news.worker.BreakingNewsWorker
+import com.teddyjs.news.worker.DailyBriefingWorker
+import com.teddyjs.news.worker.RssSyncWorker
 import timber.log.Timber
 
 /**
@@ -22,6 +26,17 @@ class NewsMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
+
+        // 무음 신호 — 절전 중에도 깨워서: 피드 갱신 + 정기 브리핑 슬롯 체크 + 토픽 알림
+        if (data["type"] == "sync") {
+            val wm = WorkManager.getInstance(applicationContext)
+            RssSyncWorker.runOnce(wm)        // 최신 뉴스 받아오기
+            DailyBriefingWorker.runOnce(wm)  // 아침/점심/저녁 브리핑(슬롯당 1회)
+            BreakingNewsWorker.runOnce(wm)   // 팔로우 토픽 알림
+            Timber.d("FCM feed_sync 수신 → 갱신·브리핑·토픽 체크")
+            return
+        }
+
         val title = data["title"] ?: message.notification?.title ?: "🔴 속보"
         val body = data["body"] ?: message.notification?.body ?: ""
         val articleId = data["articleId"] ?: ""

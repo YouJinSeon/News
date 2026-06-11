@@ -41,8 +41,9 @@ class NewsApplication : Application(), Configuration.Provider {
             else PlayIntegrityAppCheckProviderFactory.getInstance()
         )
 
-        // FCM 'breaking' 토픽 구독 → 서버(Cloud Functions)가 속보를 전체 발송하면 수신
+        // FCM 토픽 구독: breaking(속보 알림) + feed_sync(백그라운드 피드 갱신 신호)
         FirebaseMessaging.getInstance().subscribeToTopic("breaking")
+        FirebaseMessaging.getInstance().subscribeToTopic("feed_sync")
 
         // Analytics 핵심 이벤트 측정 초기화
         com.teddyjs.news.util.AnalyticsHelper.init(this)

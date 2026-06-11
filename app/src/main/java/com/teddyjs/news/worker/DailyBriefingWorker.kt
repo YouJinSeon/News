@@ -130,5 +130,15 @@ class DailyBriefingWorker @AssistedInject constructor(
                 request,
             )
         }
+
+        /** FCM 신호 등으로 즉시 1회 브리핑 슬롯 체크 (도즈에도 안정적) */
+        fun runOnce(workManager: WorkManager) {
+            val request = OneTimeWorkRequestBuilder<DailyBriefingWorker>()
+                .setConstraints(
+                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+                )
+                .build()
+            workManager.enqueue(request)
+        }
     }
 }

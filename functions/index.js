@@ -44,6 +44,18 @@ exports.checkBreakingNews = onSchedule(
     memory: "256MiB",
   },
   async () => {
+    // 모든 클라이언트에 '피드 갱신' 무음 신호 → 앱이 백그라운드에서도 최신 뉴스를 받아옴
+    // (포그라운드 서비스 없이 백그라운드 갱신을 가능하게 함)
+    try {
+      await getMessaging().send({
+        topic: "feed_sync",
+        data: { type: "sync" },
+        android: { priority: "high" },
+      });
+    } catch (e) {
+      logger.warn("feed_sync 전송 실패", e);
+    }
+
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const counterRef = db.collection("breaking_counter").doc(today);
     const counterSnap = await counterRef.get();

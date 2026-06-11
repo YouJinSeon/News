@@ -17,8 +17,8 @@ android {
         applicationId = "com.teddyjs.news"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.0.1"
+        versionCode = 20
+        versionName = "1.0.2"
 
         // Gemini API Key - local.properties 에서 주입
         buildConfigField(
@@ -152,6 +152,7 @@ dependencies {
     implementation(libs.glance.material3)
 
     implementation(libs.app.update)
+    implementation(libs.play.review)
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)

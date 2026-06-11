@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,7 +33,9 @@ import com.teddyjs.news.BuildConfig
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.admob.AdManager
 import com.teddyjs.news.presentation.ui.admob.BannerAdView
+import com.teddyjs.news.presentation.ui.common.rememberTtsController
 import com.teddyjs.news.util.AnalyticsHelper
+import com.teddyjs.news.util.ReviewHelper
 import com.teddyjs.news.util.ShareUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,12 +53,20 @@ fun DetailScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val followedTopics by viewModel.followedTopics.collectAsState()
+    val tts = rememberTtsController()
 
     LaunchedEffect(articleId) {
         viewModel.loadArticle(articleId)
         AnalyticsHelper.log(AnalyticsHelper.ARTICLE_READ)
         // 기사 N회 열람마다 전면 광고(프리미엄 제외)
         AdManager.maybeShowInterstitialOnArticleOpen(activity, userPlan == UserPlan.PREMIUM)
+        // 충분히 읽은 사용자에게 평점 요청(1회)
+        viewModel.onArticleOpenedForReview()
+    }
+
+    // 평점 요청 이벤트 수신 → Play 인앱 리뷰 플로우
+    LaunchedEffect(Unit) {
+        viewModel.reviewRequest.collect { ReviewHelper.requestReview(activity) }
     }
 
     Scaffold(
@@ -67,6 +80,17 @@ fun DetailScreen(
                 },
                 actions = {
                     uiState.article?.let { article ->
+                        IconButton(onClick = {
+                            val body = uiState.aiSummary ?: uiState.quickSummary ?: article.summary
+                            tts.toggle("${article.title}. $body")
+                        }) {
+                            Icon(
+                                if (tts.isSpeaking) Icons.Filled.Stop else Icons.Filled.VolumeUp,
+                                contentDescription = "듣기",
+                                tint = if (tts.isSpeaking) Blue400
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         IconButton(onClick = { viewModel.toggleBookmark(article.id) }) {
                             Icon(
                                 if (article.isBookmarked) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -252,6 +276,16 @@ fun DetailScreen(
                     )
                 },
                 onPremiumRequest = { viewModel.onAdRewardedAndDeepAnalysis(article) },
+            )
+
+            HorizontalDivider()
+
+            // ── AI에게 질문하기 (대화형 뉴스) ────────────────
+            AiQnaSection(
+                question = uiState.qnaQuestion,
+                answer = uiState.qnaAnswer,
+                isLoading = uiState.isQnaLoading,
+                onAsk = { q -> viewModel.askQuestion(article, q) },
             )
 
             HorizontalDivider()
@@ -530,6 +564,93 @@ fun AiDeepAnalysisSection(
                         else "광고 1회 보고 심층 분석 보기",
                         color = Amber400, fontSize = 13.sp, fontWeight = FontWeight.Medium,
                     )
+                }
+            }
+        }
+    }
+}
+
+// ── AI에게 질문하기 ─────────────────────────────────────────
+@Composable
+fun AiQnaSection(
+    question: String?,
+    answer: String?,
+    isLoading: Boolean,
+    onAsk: (String) -> Unit,
+) {
+    var input by remember { mutableStateOf("") }
+    val presets = listOf("쉽게 설명해줘", "왜 중요해?", "배경이 뭐야?", "다음은 어떻게 돼?")
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(Icons.Filled.AutoAwesome, null, modifier = Modifier.size(16.dp), tint = Blue400)
+            Text("AI에게 질문하기", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+        }
+        Text(
+            "이 기사에 대해 궁금한 걸 물어보세요",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+        )
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(presets) { q ->
+                SuggestionChip(
+                    onClick = { onAsk(q) },
+                    label = { Text(q, fontSize = 12.sp) },
+                )
+            }
+        }
+
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            placeholder = { Text("직접 질문하기...", fontSize = 13.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = {
+                if (input.isNotBlank()) { onAsk(input.trim()); input = "" }
+            }),
+            trailingIcon = {
+                if (input.isNotBlank()) {
+                    IconButton(onClick = { onAsk(input.trim()); input = "" }) {
+                        Icon(Icons.Filled.Send, null, tint = Blue400)
+                    }
+                }
+            },
+            shape = RoundedCornerShape(10.dp),
+        )
+
+        when {
+            isLoading -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text("AI가 답하는 중...", fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                }
+            }
+            answer != null -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Blue50,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (question != null) {
+                            Text("Q. $question", fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium, color = Blue400)
+                        }
+                        Text(answer, fontSize = 13.sp, lineHeight = 20.sp)
+                    }
                 }
             }
         }

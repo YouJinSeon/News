@@ -160,5 +160,15 @@ class BreakingNewsWorker @AssistedInject constructor(
                 request,
             )
         }
+
+        /** FCM 신호 등으로 즉시 1회 토픽 알림 체크 */
+        fun runOnce(workManager: WorkManager) {
+            val request = OneTimeWorkRequestBuilder<BreakingNewsWorker>()
+                .setConstraints(
+                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+                )
+                .build()
+            workManager.enqueue(request)
+        }
     }
 }

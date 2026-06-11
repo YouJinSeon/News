@@ -158,6 +158,27 @@ class GeminiService @Inject constructor(
         callGemini(prompt) ?: ""
     }
 
+    /** 기사에 대한 사용자 질문에 답변 (대화형 뉴스) */
+    suspend fun askAboutArticle(
+        title: String,
+        content: String,
+        question: String,
+    ): String? = withContext(Dispatchers.IO) {
+        val prompt = """
+            $PERSONA
+
+            아래 뉴스 기사에 대한 사용자의 질문에 답해줘.
+            - 기사 내용에 근거해서, 모르는 건 솔직히 모른다고 해.
+            - 2~4문장으로 쉽고 간결하게. 마크다운 없이 순수 텍스트만.
+
+            기사 제목: $title
+            기사 내용: ${content.take(2000)}
+
+            사용자 질문: $question
+        """.trimIndent()
+        callGemini(prompt)
+    }
+
     private fun callGemini(prompt: String): String? {
         return runCatching {
             val body = JSONObject().apply {

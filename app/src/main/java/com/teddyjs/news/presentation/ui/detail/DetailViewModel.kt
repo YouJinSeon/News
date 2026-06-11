@@ -38,6 +38,16 @@ class DetailViewModel @Inject constructor(
     private val _webViewUrl = MutableStateFlow<String?>(null)
     val webViewUrl: StateFlow<String?> = _webViewUrl.asStateFlow()
 
+    // 인앱 리뷰 요청 이벤트 (좋은 타이밍에 평점 다이얼로그)
+    private val _reviewRequest = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val reviewRequest = _reviewRequest.asSharedFlow()
+
+    fun onArticleOpenedForReview() {
+        viewModelScope.launch {
+            if (userPrefs.incrementReviewActionAndShouldAsk()) _reviewRequest.tryEmit(Unit)
+        }
+    }
+
     fun adUsesFlow(feature: RewardedFeature) = repository.adUsesFlow(feature)
 
     fun loadArticle(articleId: String) {
@@ -118,6 +128,43 @@ class DetailViewModel @Inject constructor(
         }
     }
 
+    // ── AI에게 질문하기 (대화형) ─────────────────────────────
+    fun askQuestion(article: NewsArticle, question: String) {
+        if (question.isBlank() || _uiState.value.isQnaLoading) return
+        viewModelScope.launch {
+            // 프리미엄은 무제한, 무료는 AI 사용권 1회 차감
+            val premium = userPlan.value == UserPlan.PREMIUM
+            if (!premium) {
+                val ok = repository.consumeAdUse(RewardedFeature.AI_SUMMARY)
+                if (!ok) {
+                    _uiState.update {
+                        it.copy(
+                            qnaQuestion = question,
+                            qnaAnswer = "AI 사용권이 부족해요. 위 'AI 요약'에서 광고를 보고 충전하거나, 프리미엄으로 무제한 이용해보세요.",
+                        )
+                    }
+                    return@launch
+                }
+            }
+            _uiState.update { it.copy(isQnaLoading = true, qnaQuestion = question, qnaAnswer = null) }
+            runCatching {
+                geminiService.askAboutArticle(article.title, article.summary, question)
+            }.onSuccess { answer ->
+                _uiState.update {
+                    it.copy(
+                        qnaAnswer = answer ?: "답변을 가져오지 못했어요. 잠시 후 다시 시도해주세요.",
+                        isQnaLoading = false,
+                    )
+                }
+            }.onFailure {
+                Timber.e(it, "AI 질문 실패")
+                _uiState.update {
+                    it.copy(qnaAnswer = "답변 중 오류가 발생했어요.", isQnaLoading = false)
+                }
+            }
+        }
+    }
+
     fun toggleBookmark(articleId: String) {
         viewModelScope.launch {
             repository.toggleBookmark(articleId)
@@ -171,5 +218,8 @@ data class DetailUiState(
     val isAiLoading: Boolean = false,
     val investmentInsight: String? = null,
     val keywords: List<String> = emptyList(),
+    val qnaQuestion: String? = null,
+    val qnaAnswer: String? = null,
+    val isQnaLoading: Boolean = false,
     val error: String? = null,
 )

@@ -18,8 +18,7 @@ object AdManager {
 
     private const val REWARDED_AD_UNIT_ID = "ca-app-pub-1691492105013314/2967206587"
     private const val BANNER_AD_UNIT_ID   = "ca-app-pub-1691492105013314/8092523294"
-    // TODO: AdMob 콘솔에서 '전면 광고' 단위를 만들어 실제 ID로 교체. 현재는 Google 테스트 ID.
-    private const val INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
+    private const val INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-1691492105013314/6340457928"
 
     private var rewardedAd: RewardedAd? = null
     private var isLoading = false

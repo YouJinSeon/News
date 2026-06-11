@@ -41,6 +41,7 @@ import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.admob.AdManager
 import com.teddyjs.news.presentation.ui.admob.BannerAdView
 import com.teddyjs.news.presentation.ui.common.WeatherStockRow
+import com.teddyjs.news.presentation.ui.common.rememberTtsController
 import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.*
@@ -61,6 +62,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val weather by viewModel.weather.collectAsState()
+    val tts = rememberTtsController()
 
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -137,6 +139,23 @@ fun HomeScreen(
                         }
                     },
                     actions = {
+                        // 오늘의 브리핑 듣기 (상위 뉴스를 이어서 음성 재생)
+                        IconButton(onClick = {
+                            val briefing = buildList {
+                                add("오늘의 주요 뉴스 브리핑입니다.")
+                                displayArticles.take(5).forEachIndexed { i, a ->
+                                    add("${i + 1}. ${a.title}. ${a.summary.take(200)}")
+                                }
+                            }
+                            tts.toggleList(briefing)
+                        }) {
+                            Icon(
+                                if (tts.isSpeaking) Icons.Filled.Stop else Icons.Filled.Headset,
+                                contentDescription = "브리핑 듣기",
+                                tint = if (tts.isSpeaking) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         if (userPlan == UserPlan.FREE) {
                             IconButton(onClick = onPaywallClick) {
                                 Icon(Icons.Filled.WorkspacePremium, contentDescription = "프리미엄", tint = Amber400)
@@ -306,10 +325,7 @@ fun HomeScreen(
                         )
                     }
 
-                    // 피드 중간 인라인 배너 (FREE 전용, 디버그 제외)
-                    if (userPlan == UserPlan.FREE && !BuildConfig.DEBUG) {
-                        item { InFeedBannerAd() }
-                    }
+                    // (정책 준수) 홈은 하단 고정 배너 1개만 — 페이지당 광고 1개 규칙
 
                     item {
                         if (displayArticles.size > 6) {

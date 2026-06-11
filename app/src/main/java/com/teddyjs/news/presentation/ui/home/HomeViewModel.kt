@@ -268,8 +268,8 @@ class HomeViewModel @Inject constructor(
         autoRefreshJob?.cancel()  // 기존 잡 취소
         autoRefreshJob = viewModelScope.launch {
             while (true) {
-                delay(10 * 60 * 1000L)  // 10분
-                refresh()
+                refresh()               // 앱(화면) 진입 즉시 1회 갱신
+                delay(10 * 60 * 1000L)  // 이후 10분마다
             }
         }
     }

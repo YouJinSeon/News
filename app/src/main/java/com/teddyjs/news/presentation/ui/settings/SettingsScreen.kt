@@ -361,7 +361,7 @@ fun SettingsScreen(
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
-                                Uri.parse("https://youjinseon.github.io/News/privacy_policy.html")
+                                Uri.parse("https://news-440a4.web.app/privacy_policy.html")
                             )
                             context.startActivity(intent)
                         },

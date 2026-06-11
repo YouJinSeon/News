@@ -93,6 +93,7 @@ androidx-compose-foundation = { group = "androidx.compose.foundation", name = "f
 glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
 app-update = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "appUpdate" }
+play-review = { group = "com.google.android.play", name = "review", version = "2.0.2" }
 androidx-compose-ui-text = { group = "androidx.compose.ui", name = "ui-text", version.ref = "uiText" }
 
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }

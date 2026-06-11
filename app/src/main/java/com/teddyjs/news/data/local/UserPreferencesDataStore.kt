@@ -71,6 +71,27 @@ class UserPreferencesDataStore @Inject constructor(
 
         // 페이월 A/B 변형 (최초 1회 배정 후 고정)
         private val PAYWALL_VARIANT = stringPreferencesKey("paywall_variant")
+
+        // 인앱 리뷰 요청
+        private val REVIEW_ACTION_COUNT = intPreferencesKey("review_action_count")
+        private val REVIEW_REQUESTED = booleanPreferencesKey("review_requested")
+    }
+
+    /**
+     * 긍정 행동(기사 읽기 등) 카운트 증가. 임계값 도달 + 아직 미요청이면 true 반환(1회만).
+     */
+    suspend fun incrementReviewActionAndShouldAsk(threshold: Int = 5): Boolean {
+        var shouldAsk = false
+        dataStore.edit { prefs ->
+            if (prefs[REVIEW_REQUESTED] == true) return@edit
+            val count = (prefs[REVIEW_ACTION_COUNT] ?: 0) + 1
+            prefs[REVIEW_ACTION_COUNT] = count
+            if (count >= threshold) {
+                prefs[REVIEW_REQUESTED] = true
+                shouldAsk = true
+            }
+        }
+        return shouldAsk
     }
 
     /** 페이월 A/B 변형 배정(50:50, 최초 1회 후 고정) */
@@ -292,13 +313,22 @@ class UserPreferencesDataStore @Inject constructor(
         return dataStore.data.first()[SEARCH_HISTORY]?.toList() ?: emptyList()
     }
 
-    // 클릭한 기사 키워드 저장
+    // 클릭한 기사 키워드 저장 (따옴표·문장부호 제거, 의미 있는 토큰만)
     suspend fun saveClickedKeywords(title: String) {
+        val stopwords = setOf(
+            "이런", "저런", "그런", "관련", "위해", "대한", "오늘", "내일",
+            "있다", "한다", "했다", "된다", "면서", "에서", "으로",
+        )
+        // 한글/영문/숫자 덩어리만 추출 → "8만원?", "‘초격차", "\"이런" 같은 부호 섞임 방지
+        val words = Regex("[가-힣A-Za-z0-9]+")
+            .findAll(title)
+            .map { it.value }
+            .filter { w -> w.length >= 2 && w.any { it.isLetter() } && w !in stopwords }
+            .take(3)
+            .toList()
+        if (words.isEmpty()) return
         dataStore.edit { prefs ->
             val current = (prefs[CLICKED_ARTICLES] ?: emptySet()).toMutableList()
-            val words = title.split(" ", "·", "…", "[", "]")
-                .filter { it.length >= 2 }
-                .take(3)
             current.addAll(words)
             val trimmed = if (current.size > 50) current.drop(current.size - 50) else current
             prefs[CLICKED_ARTICLES] = trimmed.toSet()

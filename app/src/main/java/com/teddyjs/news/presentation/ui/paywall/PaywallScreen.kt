@@ -192,14 +192,34 @@ fun PaywallScreen(
                 )
             }
 
-            // 안내 문구
-            Text(
-                "7일 무료 체험 후 자동 결제 · 언제든 해지 가능\nGoogle Play에서 구독 관리",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                textAlign = TextAlign.Center,
-                lineHeight = 16.sp,
-            )
+            // 구독 약관 안내 (무료체험·자동결제 조건 명확히 — Play 정책 준수)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "구독 안내",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    )
+                    Text(
+                        "• 월간 프리미엄은 7일 무료 체험 후 ${monthlyPrice}/월이 자동 청구됩니다.\n" +
+                        "• 무료 체험 기간 중 해지하면 요금이 청구되지 않습니다.\n" +
+                        "• 연간 프리미엄은 ${yearlyPrice}/년이 즉시 결제됩니다(무료 체험 미포함).\n" +
+                        "• 구독은 해지 전까지 기간이 끝날 때마다 자동 갱신됩니다.\n" +
+                        "• 해지는 언제든 Google Play › 구독에서 할 수 있으며, 다음 결제일 이후 갱신이 중단됩니다.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
         }
     }
 }
