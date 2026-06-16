@@ -1,8 +1,9 @@
 package com.teddyjs.news.data.repository
 
 import android.content.Context
-import android.util.Log
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.room.withTransaction
+import com.teddyjs.news.data.local.NewsDatabase
 import com.teddyjs.news.data.local.UserPreferencesDataStore
 import com.teddyjs.news.data.local.dao.ArticleDao
 import com.teddyjs.news.data.local.entity.ArticleEntity
@@ -25,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class NewsRepository @Inject constructor(
     private val articleDao: ArticleDao,
+    private val database: NewsDatabase,
     private val naverNewsService: NaverNewsService,
     private val rssParser: RssParser,  // ← 다시 추가
     private val geminiService: GeminiService,
@@ -36,10 +38,15 @@ class NewsRepository @Inject constructor(
 
     fun getNewsFeed(categories: List<NewsCategory>): Flow<List<NewsArticle>> {
         val categoryNames = categories.map { it.name }
+        // 카테고리가 비면 IN () 가 되어 빈 결과가 나오므로 전체 조회로 단락
+        val articlesFlow = if (categoryNames.isEmpty())
+            articleDao.getAllArticles()
+        else
+            articleDao.getArticlesByCategories(categoryNames)
         // 행동 기반 개인화: 읽은 기사 키워드 + 팔로우 토픽 + 최신성으로 가중 정렬.
         // (쓸수록 추천이 똑똑해지는 체감 → 리텐션 차별화)
         return combine(
-            articleDao.getArticlesByCategories(categoryNames),
+            articlesFlow,
             userPrefs.clickedKeywordsFlow,
             userPrefs.followedTopics,
         ) { entities, clickedKeywords, followedTopics ->
@@ -140,10 +147,19 @@ class NewsRepository @Inject constructor(
         if (newArticles.isNotEmpty()) {
             // replaceExisting=true: 전체 갱신(오래된 것 정리). false: 다른 카테고리는 보존하고 추가만.
             if (replaceExisting) {
-                val currentArticleId = userPrefs.getCurrentArticleId() ?: ""
-                articleDao.deleteAllExceptBookmarked(currentArticleId)
+                val currentArticleId = userPrefs.getCurrentArticleId()
+                // 삭제+삽입을 한 트랜잭션으로 묶어 그 사이 빈 피드가 방출되는 깜빡임을 방지
+                database.withTransaction {
+                    if (currentArticleId != null) {
+                        articleDao.deleteAllExceptBookmarked(currentArticleId)
+                    } else {
+                        articleDao.deleteAllExceptBookmarked()
+                    }
+                    articleDao.upsertArticles(newArticles)
+                }
+            } else {
+                articleDao.upsertArticles(newArticles)
             }
-            articleDao.upsertArticles(newArticles)
             Timber.d("총 ${newArticles.size}개 저장 완료 (replaceExisting=$replaceExisting)")
 
             updateWidgetFromRepo()
@@ -177,6 +193,21 @@ class NewsRepository @Inject constructor(
         }
         return result
     }
+
+    /** 오늘의 나를 위한 브리핑 — 캐시 우선, 없으면 상위 헤드라인으로 생성 */
+    suspend fun getDailyDigest(forceRefresh: Boolean = false): String? {
+        if (!forceRefresh) {
+            userPrefs.getCachedDigest()?.let { return it }
+        }
+        val categories = userPrefs.subscribedCategories.first()
+        val headlines = getNewsFeed(categories).first().take(8).map { it.title }
+        if (headlines.isEmpty()) return userPrefs.getCachedDigest()
+        val digest = geminiService.generateDailyDigest(headlines) ?: return userPrefs.getCachedDigest()
+        userPrefs.saveDigest(digest)
+        return digest
+    }
+
+    suspend fun getCachedDigest(): String? = userPrefs.getCachedDigest()
 
     suspend fun getTasteFeedKeywords(): List<String> {
         val bookmarks = articleDao.getBookmarkedArticles().first()
@@ -241,6 +272,64 @@ class NewsRepository @Inject constructor(
     suspend fun updateSubscribedCategories(categories: List<NewsCategory>) {
         userPrefs.updateSubscribedCategories(categories)
     }
+
+    // 같은 기사를 다시 열 때 재호출 방지 (앱 세션 내 메모리 캐시).
+    // LRU 30개로 상한을 둬 장시간 사용 시 메모리 누적 방지.
+    private val perspectiveCache: MutableMap<String, com.teddyjs.news.data.remote.PerspectiveResult> =
+        java.util.Collections.synchronizedMap(
+            object : LinkedHashMap<String, com.teddyjs.news.data.remote.PerspectiveResult>(16, 0.75f, true) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, com.teddyjs.news.data.remote.PerspectiveResult>,
+                ): Boolean = size > 30
+            }
+        )
+
+    /**
+     * 관점 비교 — 동일 사안 기사를 여러 언론사에서 모아 Gemini로 시각 차이를 분석.
+     * 매체가 2곳 미만이면(비교 불가) null 반환. 성공 결과는 세션 캐시에 저장.
+     */
+    suspend fun comparePerspectives(
+        article: NewsArticle,
+    ): com.teddyjs.news.data.remote.PerspectiveResult? {
+        perspectiveCache[article.id]?.let { return it }
+
+        val query = buildPerspectiveQuery(article.title)
+        val related = naverNewsService.searchRelated(query = query, excludeUrl = article.url, maxOutlets = 4)
+            // 동일 기사를 그대로 받아온 매체(제목 거의 같은 통신사 전재)는 비교 가치가 낮아 제외
+            .filterNot { normalizeTitle(it.title) == normalizeTitle(article.title) }
+        if (related.size < 2) return null
+
+        val sources = related.map {
+            com.teddyjs.news.data.remote.OutletSource(
+                press = it.source,
+                headline = it.title,
+                excerpt = it.summary,
+            )
+        }
+        val result = geminiService.comparePerspectives(topic = article.title, sources = sources)
+            ?.copy(
+                sourceLinks = related.map {
+                    com.teddyjs.news.data.remote.SourceLink(
+                        press = it.source, title = it.title, url = it.url,
+                    )
+                },
+            )
+        if (result != null) perspectiveCache[article.id] = result
+        return result
+    }
+
+    /** 검색 정확도 향상 — [속보]·[단독] 머리표, 따옴표, 말줄임 제거 후 핵심만 */
+    private fun buildPerspectiveQuery(title: String): String =
+        title
+            .replace(Regex("\\[[^\\]]*\\]"), " ")   // [속보] [단독] 등 대괄호 토큰 제거
+            .replace(Regex("[\"'“”‘’]"), " ") // 따옴표 제거
+            .replace("…", " ").replace("...", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(50)
+
+    private fun normalizeTitle(t: String): String =
+        t.replace(Regex("[^\\p{L}\\p{N}]"), "").lowercase()
 
     fun adUsesFlow(feature: com.teddyjs.news.domain.model.RewardedFeature) =
         userPrefs.adUsesFlow(feature)

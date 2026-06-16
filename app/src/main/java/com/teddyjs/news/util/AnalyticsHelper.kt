@@ -35,4 +35,5 @@ object AnalyticsHelper {
     const val SUBSCRIBE_START = "subscribe_start"
     const val SUBSCRIBE_TAP = "subscribe_tap"
     const val AI_SUMMARY_USED = "ai_summary_used"
+    const val PERSPECTIVE_COMPARE_USED = "perspective_compare_used"
 }

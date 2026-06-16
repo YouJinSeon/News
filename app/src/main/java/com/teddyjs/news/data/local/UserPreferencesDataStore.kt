@@ -32,6 +32,7 @@ class UserPreferencesDataStore @Inject constructor(
         val AD_USES_TASTE_FEED = intPreferencesKey("ad_uses_taste_feed")
         val AD_USES_KEYWORD = intPreferencesKey("ad_uses_keyword")
         val AD_USES_WEEKLY_REPORT = intPreferencesKey("ad_uses_weekly_report")
+        val AD_USES_PERSPECTIVE = intPreferencesKey("ad_uses_perspective")
 
         // 마지막 리셋 날짜
         val AD_RESET_DATE = longPreferencesKey("ad_reset_date")
@@ -75,6 +76,24 @@ class UserPreferencesDataStore @Inject constructor(
         // 인앱 리뷰 요청
         private val REVIEW_ACTION_COUNT = intPreferencesKey("review_action_count")
         private val REVIEW_REQUESTED = booleanPreferencesKey("review_requested")
+
+        // 오늘의 나를 위한 브리핑 (일일 다이제스트 캐시)
+        private val DAILY_DIGEST = stringPreferencesKey("daily_digest")
+        private val DAILY_DIGEST_DATE = stringPreferencesKey("daily_digest_date")
+    }
+
+    /** 오늘 생성된 다이제스트가 있으면 반환(없거나 날짜 지나면 null) */
+    suspend fun getCachedDigest(): String? {
+        val prefs = dataStore.data.first()
+        if (prefs[DAILY_DIGEST_DATE] != todayString()) return null
+        return prefs[DAILY_DIGEST]?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun saveDigest(text: String) {
+        dataStore.edit {
+            it[DAILY_DIGEST] = text
+            it[DAILY_DIGEST_DATE] = todayString()
+        }
     }
 
     /**
@@ -243,6 +262,7 @@ class UserPreferencesDataStore @Inject constructor(
                 RewardedFeature.TASTE_FEED -> AD_USES_TASTE_FEED
                 RewardedFeature.KEYWORD_EXTRACT -> AD_USES_KEYWORD
                 RewardedFeature.WEEKLY_REPORT -> AD_USES_WEEKLY_REPORT
+                RewardedFeature.PERSPECTIVE_COMPARE -> AD_USES_PERSPECTIVE
             }
             val current = prefs[key] ?: 0
             prefs[key] = current + feature.usesPerAd  // usesPerAd 만큼 충전
@@ -268,6 +288,7 @@ class UserPreferencesDataStore @Inject constructor(
             prefs[AD_USES_AI_SUMMARY] = 0
             prefs[AD_USES_TASTE_FEED] = 0
             prefs[AD_USES_KEYWORD] = 0
+            prefs[AD_USES_PERSPECTIVE] = 0
             prefs[AD_RESET_DATE] = System.currentTimeMillis()
         }
         // 주간 리포트는 월요일 리셋
@@ -297,6 +318,7 @@ class UserPreferencesDataStore @Inject constructor(
         RewardedFeature.TASTE_FEED -> AD_USES_TASTE_FEED
         RewardedFeature.KEYWORD_EXTRACT -> AD_USES_KEYWORD
         RewardedFeature.WEEKLY_REPORT -> AD_USES_WEEKLY_REPORT
+        RewardedFeature.PERSPECTIVE_COMPARE -> AD_USES_PERSPECTIVE
     }
 
     suspend fun saveSearchKeyword(keyword: String) {
@@ -311,6 +333,18 @@ class UserPreferencesDataStore @Inject constructor(
 
     suspend fun getSearchHistory(): List<String> {
         return dataStore.data.first()[SEARCH_HISTORY]?.toList() ?: emptyList()
+    }
+
+    suspend fun removeSearchKeyword(keyword: String) {
+        dataStore.edit { prefs ->
+            val current = prefs[SEARCH_HISTORY]?.toMutableSet() ?: mutableSetOf()
+            current.remove(keyword)
+            prefs[SEARCH_HISTORY] = current
+        }
+    }
+
+    suspend fun clearSearchHistory() {
+        dataStore.edit { it.remove(SEARCH_HISTORY) }
     }
 
     // 클릭한 기사 키워드 저장 (따옴표·문장부호 제거, 의미 있는 토큰만)

@@ -16,6 +16,7 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.messaging.FirebaseMessaging
 import com.teddyjs.news.worker.BreakingNewsWorker
+import com.teddyjs.news.worker.BriefingAlarmScheduler
 import com.teddyjs.news.worker.DailyBriefingWorker
 import com.teddyjs.news.worker.RssSyncWorker
 import dagger.hilt.android.HiltAndroidApp
@@ -96,7 +97,10 @@ class NewsApplication : Application(), Configuration.Provider {
         val workManager = WorkManager.getInstance(this)
         RssSyncWorker.schedule(workManager)        // 피드 주기 갱신 (구 NewsFeedService 역할)
         BreakingNewsWorker.schedule(workManager)
-        DailyBriefingWorker.schedule(workManager)
+        DailyBriefingWorker.schedule(workManager)  // 백업: WorkManager 주기 체크(누락 대비)
+
+        // 정기 브리핑 정시 알람 — OEM 절전/Doze로 워커가 밀려도 정시에 깨움(주 동작)
+        BriefingAlarmScheduler.scheduleNext(this)
     }
 
     override val workManagerConfiguration: Configuration

@@ -63,6 +63,9 @@ fun HomeScreen(
     val activity = context as Activity
     val weather by viewModel.weather.collectAsState()
     val tts = rememberTtsController()
+    val dailyDigest by viewModel.dailyDigest.collectAsState()
+    val isDigestLoading by viewModel.isDigestLoading.collectAsState()
+    val digestExpanded by viewModel.digestExpanded.collectAsState()
 
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -180,6 +183,23 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 130.dp),
                 ) {
+                    // 오늘의 나를 위한 브리핑 (AI 일일 다이제스트 히어로)
+                    item {
+                        DailyBriefingHero(
+                            digest = dailyDigest,
+                            isLoading = isDigestLoading,
+                            isSpeaking = tts.isSpeaking,
+                            expanded = digestExpanded,
+                            onToggleExpand = { viewModel.toggleDigestExpanded() },
+                            onGenerate = { viewModel.loadDailyDigest() },
+                            onRegenerate = { viewModel.loadDailyDigest(forceRefresh = true) },
+                            onListen = {
+                                val text = dailyDigest
+                                if (!text.isNullOrBlank()) tts.toggle("오늘의 브리핑입니다. $text")
+                            },
+                        )
+                    }
+
                     item {
                         WeatherStockRow(
                             weather = weather,
@@ -265,7 +285,7 @@ fun HomeScreen(
                                 .firstOrNull() ?: displayArticles.firstOrNull()
 
                             if (headlineArticle != null) {
-                                SectionHeader(title = "🔥 오늘의 헤드라인")
+                                SectionHeader(title = "📰 헤드라인 뉴스")
                                 HeadlineCard(
                                     article = headlineArticle,
                                     rank = 1,
@@ -280,32 +300,8 @@ fun HomeScreen(
                     }
 
                     item {
-                        val stockArticles = uiState.articles
-                            .filter { it.category == NewsCategory.STOCK }
-                            .take(5)
-                        CategoryHorizontalSection(
-                            title = "📈 주식/투자 핫이슈",
-                            articles = stockArticles,
-                            onArticleClick = onArticleClick,
-                            onMoreClick = { viewModel.selectCategory(NewsCategory.STOCK) },
-                        )
-                    }
-
-                    item {
-                        val polArticles = uiState.articles
-                            .filter { it.category == NewsCategory.POLITICS_ECONOMY }
-                            .take(5)
-                        CategoryHorizontalSection(
-                            title = "🏛️ 정치/경제 주요뉴스",
-                            articles = polArticles,
-                            onArticleClick = onArticleClick,
-                            onMoreClick = { viewModel.selectCategory(NewsCategory.POLITICS_ECONOMY) },
-                        )
-                    }
-
-                    item {
                         if (displayArticles.size >= 2) {
-                            SectionHeader(title = "📊 지금 주목받는 뉴스")
+                            SectionHeader(title = "🔥 실시간 인기 뉴스 TOP 5")
                         }
                     }
 
@@ -405,6 +401,116 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surface,
             )
+        }
+    }
+}
+
+// ── 오늘의 나를 위한 브리핑 (AI 일일 다이제스트) ──────────────
+@Composable
+fun DailyBriefingHero(
+    digest: String?,
+    isLoading: Boolean,
+    isSpeaking: Boolean,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onGenerate: () -> Unit,
+    onRegenerate: () -> Unit,
+    onListen: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = Orange50,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("⚡ 오늘의 핵심 3", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+
+            when {
+                isLoading -> Row(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Orange)
+                    Text("AI가 오늘의 브리핑을 정리하고 있어요...", fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                }
+
+                digest != null -> {
+                    // 핵심 3줄을 기본으로 바로 노출 (펼치지 않아도 한눈에)
+                    Text(
+                        digest,
+                        fontSize = 14.sp,
+                        lineHeight = 23.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    )
+                    Text(
+                        "다시 만들기",
+                        fontSize = 12.sp, color = Orange,
+                        modifier = Modifier.clickable { onRegenerate() },
+                    )
+                    // 듣기 버튼
+                    Surface(
+                        onClick = onListen,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, Orange.copy(alpha = 0.3f)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (isSpeaking) Icons.Filled.Stop else Icons.Filled.Headset,
+                                null, modifier = Modifier.size(18.dp), tint = Orange,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (isSpeaking) "정지" else "듣기",
+                                fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Icon(Icons.Filled.ChevronRight, null, modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f))
+                        }
+                    }
+                }
+
+                else -> {
+                    // 탭하면 AI가 생성
+                    Text(
+                        "오늘 뭐가 중요한지 AI가 한눈에 정리해드려요.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Surface(
+                        onClick = onGenerate,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Orange,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(Icons.Filled.AutoAwesome, null,
+                                modifier = Modifier.size(18.dp), tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text("AI 브리핑 받기", color = Color.White,
+                                fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 }

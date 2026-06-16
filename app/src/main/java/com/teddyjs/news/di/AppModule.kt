@@ -3,6 +3,7 @@ package com.teddyjs.news.di
 import android.content.Context
 import androidx.room.Room
 import androidx.work.WorkManager
+import com.teddyjs.news.BuildConfig
 import com.teddyjs.news.data.local.NewsDatabase
 import com.teddyjs.news.data.local.dao.ArticleDao
 import com.teddyjs.news.service.NaverNewsService
@@ -34,7 +35,11 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): NewsDatabase =
         Room.databaseBuilder(context, NewsDatabase::class.java, "news_db")
             .addMigrations(NewsDatabase.MIGRATION_1_2)
-            .fallbackToDestructiveMigration()
+            .apply {
+                // 릴리스에서는 마이그레이션 누락 시 사용자 DB(북마크 포함)를 조용히 지우지 않음.
+                // 파괴적 마이그레이션은 디버그 빌드에만 허용 → 누락은 개발/테스트에서 즉시 발견.
+                if (BuildConfig.DEBUG) fallbackToDestructiveMigration()
+            }
             .build()
 
     @Provides

@@ -158,6 +158,26 @@ class GeminiService @Inject constructor(
         callGemini(prompt) ?: ""
     }
 
+    /** 오늘의 나를 위한 브리핑 — 헤드라인을 묶어 대화체 다이제스트 생성 */
+    suspend fun generateDailyDigest(headlines: List<String>): String? =
+        withContext(Dispatchers.IO) {
+            if (headlines.isEmpty()) return@withContext null
+            val list = headlines.take(8).joinToString("\n- ", prefix = "- ")
+            val prompt = """
+                $PERSONA
+
+                아래는 오늘의 주요 뉴스 헤드라인이야. 사용자가 한눈에 훑을 수 있게
+                '오늘의 핵심 3가지'를 뽑아줘.
+                - 정확히 3줄. 각 줄은 '• '로 시작.
+                - 각 줄 35자 이내, 핵심만. 인사말·마크다운 없이 순수 텍스트.
+                - 가장 중요하고 서로 다른 주제 3개를 고를 것.
+
+                헤드라인:
+                $list
+            """.trimIndent()
+            callGemini(prompt)
+        }
+
     /** 기사에 대한 사용자 질문에 답변 (대화형 뉴스) */
     suspend fun askAboutArticle(
         title: String,
@@ -177,6 +197,73 @@ class GeminiService @Inject constructor(
             사용자 질문: $question
         """.trimIndent()
         callGemini(prompt)
+    }
+
+    /**
+     * 관점 비교 — 같은 사안에 대한 여러 언론사 보도를 받아
+     * 공통 사실 / 매체별 강조점 / 시각 차이를 중립적으로 비교한다.
+     * (네이버·뤼튼·뉴닉이 안 하는 차별화 기능)
+     */
+    suspend fun comparePerspectives(
+        topic: String,
+        sources: List<OutletSource>,
+    ): PerspectiveResult? = withContext(Dispatchers.IO) {
+        if (sources.size < 2) return@withContext null
+        val sourceBlock = sources.joinToString("\n\n") {
+            "[${it.press}] ${it.headline}\n발췌: ${it.excerpt}"
+        }
+        val prompt = """
+            $PERSONA
+
+            아래는 '같은 사안'에 대한 여러 언론사의 보도야. 같은 사건을 매체마다
+            어떻게 다르게 다루는지 중립적으로 비교해줘.
+            - 모든 매체가 공통으로 전하는 '사실'과, 매체별 '강조점·해석'을 분리할 것.
+            - 진영을 편들지 말고 '차이 자체'만 담백하게. 제공된 보도에만 근거(추측 금지).
+            - 매체별 관점은 시각차가 뚜렷한 순으로 최대 4개, 각 한 문장으로 간결히.
+            - 모든 매체가 거의 같게 보도해 의미 있는 차이가 없으면 divergence에 그렇게 적어.
+
+            사안: $topic
+
+            보도들:
+            $sourceBlock
+
+            JSON으로만 응답(다른 텍스트 없이):
+            {
+              "commonFacts": "공통 핵심 사실 2~3문장",
+              "outletViews": [
+                {"press": "언론사", "angle": "강조/해석하는 관점 한 문장"}
+              ],
+              "divergence": "가장 두드러진 시각 차이 1~2문장"
+            }
+        """.trimIndent()
+
+        val raw = callGemini(prompt) ?: return@withContext null
+        val cleaned = raw.replace("```json", "").replace("```", "").trim().let { r ->
+            val s = r.indexOf("{"); val e = r.lastIndexOf("}")
+            if (s != -1 && e != -1) r.substring(s, e + 1) else r
+        }
+        runCatching {
+            val obj = JSONObject(cleaned)
+            val views = obj.optJSONArray("outletViews")?.let { arr ->
+                (0 until arr.length()).map { idx ->
+                    val v = arr.getJSONObject(idx)
+                    OutletView(
+                        press = v.optString("press"),
+                        angle = v.optString("angle"),
+                    )
+                }
+            }?.filter { it.press.isNotBlank() && it.angle.isNotBlank() }
+                ?.take(4) ?: emptyList()  // 카드 과다 방지 — 최대 4개 매체
+            PerspectiveResult(
+                commonFacts = obj.optString("commonFacts").takeIf { it.isNotBlank() }
+                    ?: "공통 사실을 정리하지 못했어요.",
+                outletViews = views,
+                divergence = obj.optString("divergence").takeIf { it.isNotBlank() } ?: "",
+            ).takeIf { it.outletViews.isNotEmpty() }
+        }.getOrElse {
+            Timber.e(it, "관점 비교 파싱 실패: $cleaned")
+            null
+        }
     }
 
     private fun callGemini(prompt: String): String? {
@@ -248,3 +335,30 @@ sealed class GeminiResult {
     ) : GeminiResult()
     data class Error(val message: String) : GeminiResult()
 }
+
+/** 관점 비교 입력 — 한 언론사의 보도 요약 */
+data class OutletSource(
+    val press: String,
+    val headline: String,
+    val excerpt: String,
+)
+
+/** 관점 비교 결과 */
+data class PerspectiveResult(
+    val commonFacts: String,
+    val outletViews: List<OutletView>,
+    val divergence: String,
+    val sourceLinks: List<SourceLink> = emptyList(), // 원문 바로가기 (Repository에서 채움)
+)
+
+data class OutletView(
+    val press: String,
+    val angle: String,
+)
+
+/** 관점 비교에 사용된 원문 출처 (언론사 → 기사 URL) */
+data class SourceLink(
+    val press: String,
+    val title: String,
+    val url: String,
+)

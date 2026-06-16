@@ -16,8 +16,10 @@ import com.teddyjs.news.data.repository.NewsRepository
 import com.teddyjs.news.domain.model.NewsCategory
 import com.teddyjs.news.domain.model.UserPlan
 import com.teddyjs.news.worker.BreakingNewsWorker
+import com.teddyjs.news.worker.BriefingAlarmScheduler
 import com.teddyjs.news.worker.DailyBriefingWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +30,7 @@ class SettingsViewModel @Inject constructor(
     private val userPrefs: UserPreferencesDataStore,
     private val workManager: WorkManager,
     private val referralManager: com.teddyjs.news.util.ReferralManager,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _referralCode = MutableStateFlow("")
@@ -113,8 +116,13 @@ class SettingsViewModel @Inject constructor(
         _dailyNotification.value = enabled
         viewModelScope.launch {
             userPrefs.setDailyNotification(enabled)
-            if (enabled) DailyBriefingWorker.schedule(workManager)
-            else workManager.cancelUniqueWork(DailyBriefingWorker.WORK_NAME)
+            if (enabled) {
+                DailyBriefingWorker.schedule(workManager)       // 백업: WorkManager 주기 체크
+                BriefingAlarmScheduler.scheduleNext(appContext) // 주 동작: 정시 알람
+            } else {
+                workManager.cancelUniqueWork(DailyBriefingWorker.WORK_NAME)
+                BriefingAlarmScheduler.cancel(appContext)
+            }
         }
     }
 
@@ -165,7 +173,7 @@ class SettingsViewModel @Inject constructor(
             .build()
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(title.hashCode(), notification)
+        runCatching { manager.notify(title.hashCode(), notification) }
     }
 
     fun clearAlgorithmData() {

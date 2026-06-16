@@ -96,7 +96,6 @@ class SearchViewModel @Inject constructor(
             _isSearching.value = true
             _results.value = emptyList()
             saveHistory(q)
-            userPrefs.saveSearchKeyword(q)
             val result = searchNewsWithGemini(q)
 
             // DB에 저장 — 클릭 시 무한 로딩 방지
@@ -114,13 +113,23 @@ class SearchViewModel @Inject constructor(
     }
 
     fun removeHistory(q: String) {
-        _searchHistory.value = _searchHistory.value.filter { it != q }
-        saveHistoryList(_searchHistory.value)
+        viewModelScope.launch {
+            userPrefs.removeSearchKeyword(q)
+            _searchHistory.value = userPrefs.getSearchHistory()
+        }
     }
 
     fun clearHistory() {
-        _searchHistory.value = emptyList()
-        saveHistoryList(emptyList())
+        viewModelScope.launch {
+            userPrefs.clearSearchHistory()
+            _searchHistory.value = emptyList()
+        }
+    }
+
+    /** 검색 결과를 클릭하면 그 검색어를 기록에 저장 */
+    fun saveCurrentQuery() {
+        val q = _query.value
+        if (q.isNotBlank()) viewModelScope.launch { saveHistory(q) }
     }
 
     fun toggleBookmark(articleId: String) {
@@ -137,20 +146,13 @@ class SearchViewModel @Inject constructor(
 
     private fun loadHistory() {
         viewModelScope.launch {
-            // DataStore에서 검색 기록 로드 (간단히 메모리로 관리)
-            _searchHistory.value = listOf() // 실제 구현 시 DataStore 연동
+            _searchHistory.value = userPrefs.getSearchHistory()
         }
     }
 
-    private fun saveHistory(q: String) {
-        val updated = (_searchHistory.value.filter { it != q } + q)
-            .takeLast(10) // 최근 10개만
-        _searchHistory.value = updated
-        saveHistoryList(updated)
-    }
-
-    private fun saveHistoryList(list: List<String>) {
-        // DataStore 저장 — UserPreferencesDataStore에 검색 기록 키 추가 가능
+    private suspend fun saveHistory(q: String) {
+        userPrefs.saveSearchKeyword(q)
+        _searchHistory.value = userPrefs.getSearchHistory()
     }
 
     private suspend fun searchNewsWithGemini(query: String): List<NewsArticle> =
@@ -264,10 +266,19 @@ fun SearchScreen(
                         keyboardActions = KeyboardActions(
                             onSearch = { viewModel.search() }
                         ),
-                        placeholder = { Text("뉴스 검색...", fontSize = 14.sp) },
+                        placeholder = { Text("AI로 뉴스 검색...", fontSize = 14.sp) },
                         modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
+                        leadingIcon = {
+                            IconButton(onClick = { viewModel.search() }) {
+                                Icon(
+                                    Icons.Filled.Search, "AI 검색",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = viewModel::clearQuery) {
@@ -298,7 +309,7 @@ fun SearchScreen(
                         Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 CircularProgressIndicator()
-                                Text("최신 뉴스 검색 중...", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                                Text("✨ AI가 최신 뉴스를 검색하고 있어요...", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                             }
                         }
                     }
@@ -346,7 +357,10 @@ fun SearchScreen(
                         NewsCard(
                             article = article,
                             userPlan = userPlan,
-                            onClick = { onArticleClick(article.id) },
+                            onClick = {
+                                viewModel.saveCurrentQuery()   // 클릭한 검색어 기록 저장
+                                onArticleClick(article.id)
+                            },
                             onBookmark = { viewModel.toggleBookmark(article.id) },
                         )
                     }

@@ -66,8 +66,10 @@ class NewsMessagingService : FirebaseMessagingService() {
             .setContentIntent(pendingIntent)
             .build()
 
-        getSystemService(NotificationManager::class.java)
-            .notify((articleId.ifBlank { title }).hashCode(), notification)
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                .notify((articleId.ifBlank { title }).hashCode(), notification)
+        }.onFailure { Timber.w(it, "FCM 알림 표시 실패(권한?)") }
         Timber.d("FCM 속보 수신: $title")
     }
 

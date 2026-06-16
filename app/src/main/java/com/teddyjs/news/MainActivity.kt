@@ -67,7 +67,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // replay=1: 콜드 스타트에서 setContent(구독) 전에 emit돼도 값이 유지되어
+    // 알림 탭 → 해당 기사로 이동이 누락되지 않음.
     private val _pendingArticleId = MutableSharedFlow<String>(
+        replay = 1,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )

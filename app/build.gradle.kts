@@ -17,7 +17,7 @@ android {
         applicationId = "com.teddyjs.news"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
+        versionCode = 24
         versionName = "1.0.2"
 
         // Gemini API Key - local.properties 에서 주입

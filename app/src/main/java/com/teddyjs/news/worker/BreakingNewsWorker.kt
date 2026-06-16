@@ -76,7 +76,8 @@ class BreakingNewsWorker @AssistedInject constructor(
             Result.success()
         }.getOrElse {
             Timber.e(it, "BreakingNewsWorker 실패")
-            Result.retry()
+            // 영구 실패에 무한 재시도하지 않도록 상한 (배터리 보호)
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 
@@ -101,8 +102,10 @@ class BreakingNewsWorker @AssistedInject constructor(
             .setContentIntent(pendingIntent)
             .build()
 
-        context.getSystemService(NotificationManager::class.java)
-            .notify(article.id.hashCode(), notification)
+        runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                .notify(article.id.hashCode(), notification)
+        }.onFailure { Timber.w(it, "속보 알림 표시 실패(권한?)") }
     }
 
     private fun sendTopicNotification(article: NewsArticle, followedTopics: List<String>) {
@@ -129,8 +132,10 @@ class BreakingNewsWorker @AssistedInject constructor(
             .setContentIntent(pendingIntent)
             .build()
 
-        context.getSystemService(NotificationManager::class.java)
-            .notify(article.id.hashCode() + 1, notification)
+        runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                .notify(article.id.hashCode() + 1, notification)
+        }.onFailure { Timber.w(it, "토픽 알림 표시 실패(권한?)") }
     }
 
     companion object {

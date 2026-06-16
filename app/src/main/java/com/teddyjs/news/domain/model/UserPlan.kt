@@ -13,6 +13,7 @@ enum class RewardedFeature(val label: String, val usesPerAd: Int) {
     TASTE_FEED("AI 취향 분석 피드", 1),
     KEYWORD_EXTRACT("키워드 자동 추출", 3),
     WEEKLY_REPORT("주간 패턴 리포트", 1),
+    PERSPECTIVE_COMPARE("관점 비교", 1),
 }
 
 data class StockQuote(

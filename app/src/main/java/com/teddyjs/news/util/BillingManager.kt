@@ -32,8 +32,9 @@ class BillingManager @Inject constructor(
     private var reconnectJob: Job? = null
     private lateinit var billingClientStateListener: BillingClientStateListener
 
-    private val _monthlyPrice = MutableStateFlow<String>("₩6,900")
-    private val _yearlyPrice = MutableStateFlow<String>("₩58,800")
+    // 가격은 절대 하드코딩하지 않음 — queryProductPrices()로 실시간 조회. 조회 전까지 빈 값(로딩 상태)
+    private val _monthlyPrice = MutableStateFlow<String>("")
+    private val _yearlyPrice = MutableStateFlow<String>("")
     private val _yearlyPricePerMonth = MutableStateFlow<String>("")
     val monthlyPrice = _monthlyPrice.asStateFlow()
     val yearlyPrice = _yearlyPrice.asStateFlow()
@@ -130,7 +131,14 @@ class BillingManager @Inject constructor(
                 return@launch
             }
 
-            val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken
+            // 무료 체험(₩0) 단계가 있는 오퍼를 우선 선택 → 무료 체험이 실제로 적용됨.
+            // (체험 자격이 없는 사용자는 그 오퍼가 안 내려와 기본 요금제로 자동 폴백 = 바로 결제)
+            val offers = productDetails.subscriptionOfferDetails
+            val offerToken = (
+                offers?.firstOrNull { offer ->
+                    offer.pricingPhases.pricingPhaseList.any { it.priceAmountMicros == 0L }
+                } ?: offers?.firstOrNull()
+            )?.offerToken
             if (offerToken == null) {
                 Timber.e("offerToken null")
                 _billingState.value = BillingState.Error("결제 정보를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
@@ -186,17 +194,25 @@ class BillingManager @Inject constructor(
                 .setProductType(BillingClient.ProductType.SUBS)
                 .build()
         )
+        val querySucceeded =
+            result.billingResult.responseCode == BillingClient.BillingResponseCode.OK
         val activePurchase = result.purchasesList.firstOrNull {
             it.purchaseState == Purchase.PurchaseState.PURCHASED
         }
-        if (activePurchase != null) {
-            userPrefs.setUserPlan(UserPlan.PREMIUM)
-            userPrefs.setSubscribedProductId(activePurchase.products.firstOrNull())
-            Timber.d("기존 구독 확인: ${activePurchase.products}")
-        } else if (!BuildConfig.DEBUG) {
-            userPrefs.setUserPlan(UserPlan.FREE)
-            userPrefs.setSubscribedProductId(null)
-            Timber.d("구독 없음 → FREE")
+        when {
+            activePurchase != null -> {
+                userPrefs.setUserPlan(UserPlan.PREMIUM)
+                userPrefs.setSubscribedProductId(activePurchase.products.firstOrNull())
+                Timber.d("기존 구독 확인: ${activePurchase.products}")
+            }
+            // 조회가 '성공'했고 진짜 구독이 없을 때만 FREE 처리.
+            // 일시적 조회 오류(네트워크/Play)에 유료 구독자를 FREE로 강등하는 버그 방지.
+            querySucceeded && !BuildConfig.DEBUG -> {
+                userPrefs.setUserPlan(UserPlan.FREE)
+                userPrefs.setSubscribedProductId(null)
+                Timber.d("구독 없음 → FREE")
+            }
+            else -> Timber.w("구매 조회 실패(${result.billingResult.responseCode}) → 기존 플랜 유지")
         }
     }
 

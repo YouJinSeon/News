@@ -48,8 +48,9 @@ class RssSyncWorker @AssistedInject constructor(
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
+            // WorkManager 주기 최소값은 15분 — 10분은 자동으로 15분으로 클램프되므로 명시.
             val request = PeriodicWorkRequestBuilder<RssSyncWorker>(
-                repeatInterval = 10,
+                repeatInterval = 15,
                 repeatIntervalTimeUnit = TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)

@@ -2,6 +2,7 @@ package com.teddyjs.news.presentation.ui.detail
 
 import android.app.Activity
 import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.teddyjs.news.data.remote.PerspectiveResult
 import com.teddyjs.news.domain.model.RewardedFeature
 import com.teddyjs.news.domain.model.UserPlan
 import com.teddyjs.news.BuildConfig
@@ -50,6 +52,7 @@ fun DetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val userPlan by viewModel.userPlan.collectAsState()
     val adUsesSummary by viewModel.adUsesFlow(RewardedFeature.AI_SUMMARY).collectAsState(initial = 0)
+    val perspectiveUses by viewModel.perspectiveUses.collectAsState()
     val context = LocalContext.current
     val activity = context as Activity
     val followedTopics by viewModel.followedTopics.collectAsState()
@@ -164,133 +167,36 @@ fun DetailScreen(
                 lineHeight = 26.sp,
             )
 
-            // ── AI 간략 요약 (무료 3회/일) ───────────────────
-            AiQuickSummarySection(
-                summary = uiState.quickSummary,          // ← quickSummary
-                isLoading = uiState.isQuickSummaryLoading, // ← 별도 로딩
-                adUses = adUsesSummary,
-                userPlan = userPlan,
-                onRequestFree = {
-                    AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
-                    viewModel.requestQuickSummary(article)
-                },
-                onWatchAd = {
-                    AdManager.showRewardedAd(
-                        activity = activity,
-                        onRewarded = {
-                            AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
-                            viewModel.onAdRewardedAndQuickSummary(article)
-                        },
-                        onDismissed = {},
-                        onFailed = {},
-                    )
-                },
-            )
-
-            HorizontalDivider()
-
-            // ── 본문 ─────────────────────────────────────────
+            // ── 본문 (기사 먼저) ─────────────────────────────
             val summary = article.summary.trim()
-
             if (summary.isNotBlank()) {
-                HighlightedText(
-                    text = summary,
-                    keywords = uiState.keywords,
-                    fontSize = 14.sp,
-                )
+                HighlightedText(text = summary, keywords = uiState.keywords, fontSize = 14.sp)
             }
-
             val looksTruncated = summary.trimEnd().endsWith("…") ||
                 summary.trimEnd().endsWith("...")
-            if (summary.length < 100 || looksTruncated) {
-                // 짧거나 잘린 요약 (일부 매체는 RSS로 요약만 제공)
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Info,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
-                        Text(
-                            "💡 이 매체는 RSS로 요약만 제공해요.\n전체 내용은 아래 '전체 기사 읽기'로,\n핵심 정리는 'AI 심층 분석'으로 보세요!",
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
-                    }
-                }
-            } else {
-                // 충분히 길 때
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Info,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        )
-                        Text(
-                            "* RSS 기반 요약이에요. 전체 내용은 기사 읽기를, 더 정확한 분석은 AI 심층 분석을 이용해주세요.",
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        )
-                    }
+                    Icon(Icons.Filled.Info, null, modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f))
+                    Text(
+                        if (summary.length < 100 || looksTruncated)
+                            "이 매체는 RSS로 요약만 제공해요. 전체 내용은 '전체 기사 읽기'로 보세요."
+                        else
+                            "RSS 기반 요약이에요. 전체 내용은 '전체 기사 읽기'를 이용해주세요.",
+                        fontSize = 11.sp, lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
                 }
             }
 
-            HorizontalDivider()
-
-            // ── AI 심층 분석 (무조건 광고 1회) ──────────────
-            AiDeepAnalysisSection(
-                aiSummary = uiState.aiSummary,
-                investmentInsight = uiState.investmentInsight,
-                keywords = uiState.keywords,
-                isLoading = uiState.isAiLoading,
-                followedTopics = followedTopics,
-                onFollowTopic = viewModel::toggleFollowTopic,
-                userPlan = userPlan,
-                onWatchAd = {
-                    AdManager.showRewardedAd(
-                        activity = activity,
-                        onRewarded = { viewModel.onAdRewardedAndDeepAnalysis(article) },
-                        onDismissed = {},
-                        onFailed = { onPaywallClick() },
-                    )
-                },
-                onPremiumRequest = { viewModel.onAdRewardedAndDeepAnalysis(article) },
-            )
-
-            HorizontalDivider()
-
-            // ── AI에게 질문하기 (대화형 뉴스) ────────────────
-            AiQnaSection(
-                question = uiState.qnaQuestion,
-                answer = uiState.qnaAnswer,
-                isLoading = uiState.isQnaLoading,
-                onAsk = { q -> viewModel.askQuestion(article, q) },
-            )
-
-            HorizontalDivider()
-
-            // ── 전체 기사 읽기 ───────────────────────────────
             Button(
                 onClick = {
                     viewModel.saveWebViewUrl(article.url)
@@ -304,6 +210,107 @@ fun DetailScreen(
                 Text("전체 기사 읽기", fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
 
+            HorizontalDivider()
+
+            // ── AI 도구 탭 (요약 / 심층 분석 / 질문) ──────────
+            var selectedTab by remember { mutableStateOf(0) }
+            AiTabRow(selectedTab = selectedTab, onSelect = { selectedTab = it })
+
+            when (selectedTab) {
+                0 -> {
+                    AiQuickSummarySection(
+                        summary = uiState.quickSummary,
+                        isLoading = uiState.isQuickSummaryLoading,
+                        adUses = adUsesSummary,
+                        userPlan = userPlan,
+                        onRequestFree = {
+                            AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
+                            viewModel.requestQuickSummary(article)
+                        },
+                        onWatchAd = {
+                            AdManager.showRewardedAd(
+                                activity = activity,
+                                onRewarded = {
+                                    AnalyticsHelper.log(AnalyticsHelper.AI_SUMMARY_USED)
+                                    viewModel.onAdRewardedAndQuickSummary(article)
+                                },
+                                onDismissed = {},
+                                onFailed = {},
+                            )
+                        },
+                    )
+                }
+
+                // ── AI 심층 분석 ──
+                1 -> {
+                    AiDeepAnalysisSection(
+                        aiSummary = uiState.aiSummary,
+                        investmentInsight = uiState.investmentInsight,
+                        keywords = uiState.keywords,
+                        isLoading = uiState.isAiLoading,
+                        followedTopics = followedTopics,
+                        onFollowTopic = viewModel::toggleFollowTopic,
+                        userPlan = userPlan,
+                        onWatchAd = {
+                            AdManager.showRewardedAd(
+                                activity = activity,
+                                onRewarded = { viewModel.onAdRewardedAndDeepAnalysis(article) },
+                                onDismissed = {},
+                                onFailed = { onPaywallClick() },
+                            )
+                        },
+                        onPremiumRequest = { viewModel.onAdRewardedAndDeepAnalysis(article) },
+                    )
+                }
+
+                // ── AI 질문 ──
+                else -> {
+                    AiQnaSection(
+                        question = uiState.qnaQuestion,
+                        answer = uiState.qnaAnswer,
+                        isLoading = uiState.isQnaLoading,
+                        onAsk = { q -> viewModel.askQuestion(article, q) },
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            // ── 관점 비교 (언론사별 시각) — 차별화 기능 ──────────
+            PerspectiveCompareSection(
+                result = uiState.perspective,
+                isLoading = uiState.isPerspectiveLoading,
+                errorMessage = uiState.perspectiveError,
+                userPlan = userPlan,
+                availableUses = perspectiveUses,
+                onUseCredit = {
+                    AnalyticsHelper.log(AnalyticsHelper.PERSPECTIVE_COMPARE_USED)
+                    viewModel.requestPerspectiveCompare(article)
+                },
+                onWatchAd = {
+                    AdManager.showRewardedAd(
+                        activity = activity,
+                        onRewarded = {
+                            AnalyticsHelper.log(AnalyticsHelper.PERSPECTIVE_COMPARE_USED)
+                            viewModel.onAdRewardedAndPerspective(article)
+                        },
+                        onDismissed = {},
+                        onFailed = { onPaywallClick() },
+                    )
+                },
+                onPremiumRequest = {
+                    AnalyticsHelper.log(AnalyticsHelper.PERSPECTIVE_COMPARE_USED)
+                    viewModel.requestPerspectiveCompare(article)
+                },
+                onOpenSource = { url ->
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)),
+                        )
+                    }
+                },
+            )
+
             // 하단 배너 (FREE 전용, 디버그 제외)
             if (userPlan == UserPlan.FREE && !BuildConfig.DEBUG) {
                 Spacer(Modifier.height(8.dp))
@@ -316,6 +323,40 @@ fun DetailScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+// ── AI 탭 (요약 / 심층 분석 / 질문) ────────────────────────
+@Composable
+fun AiTabRow(selectedTab: Int, onSelect: (Int) -> Unit) {
+    val tabs = listOf("AI 요약", "AI 심층 분석", "AI 질문")
+    Row(modifier = Modifier.fillMaxWidth()) {
+        tabs.forEachIndexed { i, label ->
+            val selected = i == selectedTab
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onSelect(i) }
+                    .padding(vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    label,
+                    fontSize = 13.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth(0.55f)
+                        .height(2.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    shape = RoundedCornerShape(2.dp),
+                ) {}
+            }
         }
     }
 }
@@ -427,6 +468,220 @@ fun AiQuickSummarySection(
                         Spacer(Modifier.width(6.dp))
                         Text("광고 보고 +3회 충전", fontSize = 13.sp, color = Blue400)
                     }
+                }
+            }
+        }
+    }
+}
+
+// ── 관점 비교 (언론사별 시각) — 차별화 기능 ────────────────────
+@Composable
+fun PerspectiveCompareSection(
+    result: PerspectiveResult?,
+    isLoading: Boolean,
+    errorMessage: String?,
+    userPlan: UserPlan,
+    availableUses: Int,
+    onUseCredit: () -> Unit,
+    onWatchAd: () -> Unit,
+    onPremiumRequest: () -> Unit,
+    onOpenSource: (String) -> Unit,
+) {
+    // 기사마다 자동 호출하면 API 비용·노이즈가 커지므로, 누구나 '탭'으로 실행한다.
+    // 무료: 남은 사용권이 있으면 광고 없이, 없으면 광고 1회. (성공 시에만 1회 차감)
+    val isPremium = userPlan == UserPlan.PREMIUM
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("⚖️", fontSize = 15.sp)
+            Text("관점 비교 · 언론사별 시각", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+            Spacer(Modifier.weight(1f))
+            if (result == null && !isLoading && !isPremium) {
+                Surface(shape = RoundedCornerShape(10.dp), color = Amber50) {
+                    Text(
+                        if (availableUses > 0) "남은 ${availableUses}회" else "광고 1회",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 10.sp,
+                        color = Amber400,
+                    )
+                }
+            }
+        }
+
+        Text(
+            if (result != null && result.sourceLinks.isNotEmpty())
+                "${result.sourceLinks.size}개 매체의 보도를 비교했어요."
+            else
+                "같은 사안을 언론사들이 어떻게 다르게 보도하는지 AI가 비교해드려요.",
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+        )
+
+        when {
+            isLoading -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text(
+                        "여러 매체를 비교하는 중...",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
+                }
+            }
+
+            result != null -> {
+                // 공통 사실
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("✓ 공통 사실", fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                            color = Green400)
+                        Text(result.commonFacts, fontSize = 13.sp, lineHeight = 20.sp)
+                    }
+                }
+
+                // 매체별 강조점
+                Text("언론사별 강조점", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                result.outletViews.forEach { view ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.5.dp, MaterialTheme.colorScheme.outline,
+                        ),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(view.press, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                color = Blue400)
+                            Text(view.angle, fontSize = 12.sp, lineHeight = 18.sp)
+                        }
+                    }
+                }
+
+                // 가장 큰 시각 차이
+                if (result.divergence.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Amber50,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text("🔍 가장 큰 시각 차이", fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium, color = Amber400)
+                            Text(result.divergence, fontSize = 12.sp, lineHeight = 18.sp,
+                                color = Color(0xFF8A5A00))
+                        }
+                    }
+                }
+
+                // 비교한 기사 원문 — 탭하면 해당 언론사 기사로 이동 (신뢰도·검증)
+                if (result.sourceLinks.isNotEmpty()) {
+                    Text("비교한 기사 원문", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                    result.sourceLinks.forEach { link ->
+                        Surface(
+                            onClick = { onOpenSource(link.url) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(link.press, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                                        color = Blue400)
+                                    Text(link.title, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 2)
+                                }
+                                Icon(Icons.Filled.OpenInNew, "원문 열기",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                            }
+                        }
+                    }
+                }
+
+                Text(
+                    "AI가 여러 보도를 비교한 결과예요. 원문도 함께 확인해보세요.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                )
+            }
+
+            errorMessage != null -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        errorMessage,
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 12.sp, lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                }
+                // 재시도 — 프리미엄/남은 사용권이 있으면 광고 없이, 없으면 광고 1회
+                TextButton(
+                    onClick = when {
+                        isPremium -> onPremiumRequest
+                        availableUses > 0 -> onUseCredit
+                        else -> onWatchAd
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp), tint = Amber400)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (isPremium || availableUses > 0) "다시 시도" else "광고 1회 보고 다시 시도",
+                        color = Amber400, fontSize = 13.sp,
+                    )
+                }
+            }
+
+            else -> {
+                Button(
+                    onClick = when {
+                        isPremium -> onPremiumRequest
+                        availableUses > 0 -> onUseCredit
+                        else -> onWatchAd
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Amber50),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text("⚖️", fontSize = 14.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when {
+                            isPremium -> "관점 비교 보기"
+                            availableUses > 0 -> "관점 비교 보기 (남은 ${availableUses}회)"
+                            else -> "광고 1회 보고 관점 비교"
+                        },
+                        color = Amber400, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    )
                 }
             }
         }

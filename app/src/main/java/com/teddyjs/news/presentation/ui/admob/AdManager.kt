@@ -28,11 +28,12 @@ object AdManager {
     private var articleOpenCount = 0
     private const val INTERSTITIAL_EVERY = 4   // 기사 4회 열람마다 1회 노출
 
-    fun preload(activity: Activity) {
+    fun preload(context: Context) {
         if (rewardedAd != null || isLoading) return
         isLoading = true
+        // Activity가 아닌 applicationContext로 로드 → Activity 누수 방지
         RewardedAd.load(
-            activity,
+            context.applicationContext,
             REWARDED_AD_UNIT_ID,
             AdRequest.Builder().build(),
             object : RewardedAdLoadCallback() {
@@ -68,10 +69,12 @@ object AdManager {
             return
         }
 
+        // 콜백이 Activity를 오래 붙잡지 않도록 applicationContext만 캡처
+        val appContext = activity.applicationContext
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
                 rewardedAd = null
-                preload(activity)
+                preload(appContext)
                 onDismissed()
             }
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
@@ -80,19 +83,22 @@ object AdManager {
             }
         }
 
-        ad.show(activity) { _ ->
-            onRewarded()
-        }
+        runCatching { ad.show(activity) { _ -> onRewarded() } }
+            .onFailure {
+                Timber.e(it, "Rewarded show 실패")
+                rewardedAd = null
+                onFailed()
+            }
     }
 
     fun isReady() = rewardedAd != null
 
     // ── 전면 광고 ──────────────────────────────────────────
-    fun preloadInterstitial(activity: Activity) {
+    fun preloadInterstitial(context: Context) {
         if (interstitialAd != null || interstitialLoading) return
         interstitialLoading = true
         InterstitialAd.load(
-            activity,
+            context.applicationContext,
             INTERSTITIAL_AD_UNIT_ID,
             AdRequest.Builder().build(),
             object : InterstitialAdLoadCallback() {
@@ -122,16 +128,20 @@ object AdManager {
             preloadInterstitial(activity)
             return
         }
+        val appContext = activity.applicationContext
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() {
                 interstitialAd = null
-                preloadInterstitial(activity)
+                preloadInterstitial(appContext)
             }
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
                 interstitialAd = null
             }
         }
-        ad.show(activity)
+        runCatching { ad.show(activity) }.onFailure {
+            Timber.e(it, "Interstitial show 실패")
+            interstitialAd = null
+        }
     }
 
     fun createBannerAd(context: Context): AdView {

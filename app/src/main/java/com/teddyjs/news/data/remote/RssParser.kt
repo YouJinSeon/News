@@ -193,8 +193,10 @@ class RssParser @Inject constructor(
                 return result
             }
         }
-        Timber.e("parseDate failed: $dateStr")  // ← 파싱 실패 시
-        return System.currentTimeMillis()  // ← 실패하면 현재 시간 반환이라 0분전 나옴
+        // 파싱 실패 시 '현재 시각'을 주면 미상 기사가 '방금'으로 최상단에 노출됨.
+        // 하루 전으로 처리해 피드 상단을 오염시키지 않으면서도 숨기지는 않음.
+        Timber.w("parseDate failed: $dateStr")
+        return System.currentTimeMillis() - 24 * 60 * 60 * 1000L
     }
 
     private fun md5(input: String): String {

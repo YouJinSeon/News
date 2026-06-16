@@ -66,6 +66,32 @@ class HomeViewModel @Inject constructor(
     private val _unlockedCount = MutableStateFlow(10)  // 기본 10개
     val unlockedCount: StateFlow<Int> = _unlockedCount.asStateFlow()
 
+    // 오늘의 나를 위한 브리핑 (AI 일일 다이제스트)
+    private val _dailyDigest = MutableStateFlow<String?>(null)
+    val dailyDigest: StateFlow<String?> = _dailyDigest.asStateFlow()
+    private val _isDigestLoading = MutableStateFlow(false)
+    val isDigestLoading: StateFlow<Boolean> = _isDigestLoading.asStateFlow()
+
+    // 브리핑 펼침/접힘 상태 (화면 재진입에도 유지)
+    private val _digestExpanded = MutableStateFlow(true)
+    val digestExpanded: StateFlow<Boolean> = _digestExpanded.asStateFlow()
+    fun toggleDigestExpanded() { _digestExpanded.value = !_digestExpanded.value }
+
+    fun loadDailyDigest(forceRefresh: Boolean = false) {
+        viewModelScope.launch {
+            // 캐시 먼저(즉시 표시)
+            if (!forceRefresh) {
+                val cached = userPrefs.getCachedDigest()
+                if (cached != null) { _dailyDigest.value = cached; return@launch }
+            }
+            _isDigestLoading.value = true
+            runCatching { repository.getDailyDigest(forceRefresh) }
+                .onSuccess { _dailyDigest.value = it }
+                .onFailure { Timber.e(it, "다이제스트 생성 실패") }
+            _isDigestLoading.value = false
+        }
+    }
+
     private var hasInitialRefresh = false
 
 
@@ -183,6 +209,11 @@ class HomeViewModel @Inject constructor(
                 }
 
                 _uiState.update { it.copy(articles = finalSorted.distinctBy { it.id }, isLoading = false) }
+
+                // 오늘 이미 생성된 브리핑이 있으면 표시만(자동 생성 X — 사용자가 탭하면 생성)
+                if (_dailyDigest.value == null && finalSorted.isNotEmpty()) {
+                    userPrefs.getCachedDigest()?.let { _dailyDigest.value = it }
+                }
             }
         }
     }

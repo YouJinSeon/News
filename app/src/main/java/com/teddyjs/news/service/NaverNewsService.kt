@@ -79,6 +79,63 @@ class NaverNewsService @Inject constructor(
         }.getOrNull()
     }
 
+    /**
+     * 관점 비교용 — 동일 사안에 대한 여러 언론사 보도를 검색한다.
+     * 같은 언론사는 1건만 남기고, 원본 기사(excludeUrl)는 제외해
+     * "서로 다른 매체"의 시각이 모이도록 한다.
+     */
+    suspend fun searchRelated(
+        query: String,
+        excludeUrl: String? = null,
+        maxOutlets: Int = 5,
+    ): List<RelatedArticle> = withContext(Dispatchers.IO) {
+        runCatching {
+            val url = "https://openapi.naver.com/v1/search/news.json" +
+                    "?query=${java.net.URLEncoder.encode(query, "UTF-8")}" +
+                    "&display=30&sort=sim"
+            val request = Request.Builder()
+                .url(url)
+                .header("X-Naver-Client-Id", clientId)
+                .header("X-Naver-Client-Secret", clientSecret)
+                .build()
+            val body = okHttpClient.newCall(request).execute()
+                .use { it.body?.string() ?: return@withContext emptyList() }
+            val json = JSONObject(body)
+            if (json.has("errorCode")) {
+                Timber.e("네이버 검색 에러: ${json.optString("errorCode")}")
+                return@withContext emptyList()
+            }
+            val items = json.getJSONArray("items")
+            val seenOutlets = HashSet<String>()
+            val result = ArrayList<RelatedArticle>()
+            for (i in 0 until items.length()) {
+                val item = items.getJSONObject(i)
+                val link = item.getString("link")
+                if (excludeUrl != null && link == excludeUrl) continue
+                val outlet = runCatching {
+                    item.getString("originallink")
+                        .replace("https://", "").replace("http://", "")
+                        .removePrefix("www.")
+                        .split("/").first()
+                }.getOrDefault("기타 매체")
+                if (!seenOutlets.add(outlet)) continue  // 매체당 1건
+                result.add(
+                    RelatedArticle(
+                        title = cleanHtml(item.getString("title")),
+                        source = outlet,
+                        summary = cleanHtml(item.getString("description")).take(400),
+                        url = link,
+                    )
+                )
+                if (result.size >= maxOutlets) break
+            }
+            result
+        }.getOrElse {
+            Timber.e(it, "관점 비교 검색 실패")
+            emptyList()
+        }
+    }
+
     private fun fetchNews(query: String, category: NewsCategory): List<ArticleEntity> {
         val url = "https://openapi.naver.com/v1/search/news.json" +
                 "?query=${java.net.URLEncoder.encode(query, "UTF-8")}" +
@@ -149,7 +206,9 @@ class NaverNewsService @Inject constructor(
             }
         }
 
-        return System.currentTimeMillis()
+        // 파싱 실패 기사가 '방금'으로 최상단에 뜨지 않도록 하루 전으로 처리
+        Timber.w("parseDate 실패: $dateStr")
+        return System.currentTimeMillis() - 24 * 60 * 60 * 1000L
     }
 
     private fun md5(input: String): String {
@@ -157,3 +216,11 @@ class NaverNewsService @Inject constructor(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 }
+
+/** 관점 비교용 — 한 사안에 대한 특정 언론사의 보도 한 건 */
+data class RelatedArticle(
+    val title: String,
+    val source: String,   // 언론사(도메인)
+    val summary: String,
+    val url: String,
+)

@@ -103,7 +103,9 @@ class DailyBriefingWorker @AssistedInject constructor(
 
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
                 as NotificationManager
-        manager.notify(System.currentTimeMillis().toInt(), notification)
+        runCatching {
+            manager.notify(System.currentTimeMillis().toInt(), notification)
+        }.onFailure { Timber.w(it, "브리핑 알림 표시 실패(권한?)") }
     }
 
     companion object {
@@ -131,12 +133,14 @@ class DailyBriefingWorker @AssistedInject constructor(
             )
         }
 
-        /** FCM 신호 등으로 즉시 1회 브리핑 슬롯 체크 (도즈에도 안정적) */
+        /** FCM·정시 알람 신호로 즉시 1회 브리핑 슬롯 체크 (도즈에도 안정적) */
         fun runOnce(workManager: WorkManager) {
             val request = OneTimeWorkRequestBuilder<DailyBriefingWorker>()
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
+                // 알람으로 깨어난 직후 짧은 실행 창에서 바로 처리되도록 신속 작업으로 요청
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
             workManager.enqueue(request)
         }

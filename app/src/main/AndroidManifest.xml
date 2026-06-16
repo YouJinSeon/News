@@ -9,6 +9,9 @@
     <!-- 내 지역 날씨용 (대략 위치만). 거부 시 서울 기본값으로 동작 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- 재부팅 후 정기 브리핑 알람 복구용 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:name=".NewsApplication"
         android:allowBackup="true"
@@ -64,6 +67,22 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/news_widget_info" />
+        </receiver>
+
+        <!-- 정기 브리핑 정시 알람 수신 (앱 내부에서만 트리거) -->
+        <receiver
+            android:name=".worker.BriefingAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 재부팅·앱 업데이트 후 알람 복구 -->
+        <receiver
+            android:name=".worker.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
         </receiver>
 
     </application>

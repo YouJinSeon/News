@@ -35,6 +35,10 @@ class DetailViewModel @Inject constructor(
     val followedTopics: StateFlow<List<String>> = userPrefs.followedTopics
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    // 관점 비교 남은 사용권 (광고로 충전, 성공 시 1회 차감)
+    val perspectiveUses: StateFlow<Int> = repository.adUsesFlow(RewardedFeature.PERSPECTIVE_COMPARE)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
     private val _webViewUrl = MutableStateFlow<String?>(null)
     val webViewUrl: StateFlow<String?> = _webViewUrl.asStateFlow()
 
@@ -125,6 +129,50 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             repository.grantAdReward(RewardedFeature.KEYWORD_EXTRACT)
             requestDeepAnalysis(article)
+        }
+    }
+
+    // ── 관점 비교 (언론사별 시각) ─────────────────────────────
+    fun requestPerspectiveCompare(article: NewsArticle) {
+        if (_uiState.value.isPerspectiveLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isPerspectiveLoading = true, perspectiveError = null) }
+            runCatching {
+                repository.comparePerspectives(article)
+            }.onSuccess { result ->
+                if (result == null) {
+                    // 관련 보도가 부족해 실패 → 사용권을 차감하지 않음(광고로 받은 권리 보전)
+                    _uiState.update {
+                        it.copy(
+                            isPerspectiveLoading = false,
+                            perspectiveError = "이 사안을 다룬 다른 언론사 보도를 충분히 찾지 못했어요. " +
+                                "(사용권은 그대로 남아 있어요)",
+                        )
+                    }
+                } else {
+                    // 성공했을 때만 1회 차감 (프리미엄은 무제한)
+                    if (userPlan.value != UserPlan.PREMIUM) {
+                        repository.consumeAdUse(RewardedFeature.PERSPECTIVE_COMPARE)
+                    }
+                    _uiState.update { it.copy(perspective = result, isPerspectiveLoading = false) }
+                }
+            }.onFailure {
+                Timber.e(it, "관점 비교 실패")
+                _uiState.update {
+                    it.copy(
+                        isPerspectiveLoading = false,
+                        perspectiveError = "관점 비교 중 오류가 발생했어요. (사용권은 그대로 남아 있어요)",
+                    )
+                }
+            }
+        }
+    }
+
+    // 광고 보고 관점 비교
+    fun onAdRewardedAndPerspective(article: NewsArticle) {
+        viewModelScope.launch {
+            repository.grantAdReward(RewardedFeature.PERSPECTIVE_COMPARE)
+            requestPerspectiveCompare(article)
         }
     }
 
@@ -221,5 +269,8 @@ data class DetailUiState(
     val qnaQuestion: String? = null,
     val qnaAnswer: String? = null,
     val isQnaLoading: Boolean = false,
+    val perspective: com.teddyjs.news.data.remote.PerspectiveResult? = null,
+    val isPerspectiveLoading: Boolean = false,
+    val perspectiveError: String? = null,
     val error: String? = null,
 )

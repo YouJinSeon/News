@@ -44,6 +44,11 @@ fun PaywallScreen(
     val yearlyPrice by billingManager.yearlyPrice.collectAsState()
     val yearlyPerMonth by billingManager.yearlyPricePerMonth.collectAsState()
 
+    // 가격은 BillingManager 실시간 조회값. 로딩 전(빈 값)에는 구매를 막아 잘못된 가격 노출 방지.
+    val pricesReady = monthlyPrice.isNotBlank() && yearlyPrice.isNotBlank()
+    val monthlyLabel = if (monthlyPrice.isBlank()) "불러오는 중…" else "$monthlyPrice/월"
+    val yearlyLabel = if (yearlyPrice.isBlank()) "불러오는 중…" else "$yearlyPrice/년"
+
     // 화면 열릴 때 상태 초기화 (paywall_view 측정은 ViewModel에서 변형과 함께 기록)
     LaunchedEffect(Unit) {
         billingManager.resetState()
@@ -136,52 +141,93 @@ fun PaywallScreen(
                 }
             }
 
-            // 월간 플랜
-            PlanCard(
-                name = "프리미엄",
-                price = monthlyPrice,
-                period = "/월",
-                isPopular = true,
-                features = listOf(
-                    "뉴스 피드 무제한",
-                    "AI 심층 분석 무제한",
-                    "AI 취향 분석 피드 무제한",
-                    "키워드 자동 추출 무제한",
-                    "관심사 · 즐겨찾기 무제한",
-                    "광고 없음",
-                ),
-                onSubscribe = {
-                    AnalyticsHelper.log(
-                        AnalyticsHelper.SUBSCRIBE_TAP,
-                        mapOf("variant" to variant, "product" to "monthly"),
-                    )
-                    billingManager.launchPurchaseFlow(activity, BillingManager.PRODUCT_PREMIUM_MONTHLY)
-                },
-                ctaText = "7일 무료 체험 시작",
-                subPriceText = "체험 후 $monthlyPrice/월 · 언제든 해지",
+            // ── 플랜 선택 ──────────────────────────────────
+            var selectedPlan by remember { mutableStateOf("monthly") }
+            PlanRow(
+                selected = selectedPlan == "monthly",
+                title = "월간 프리미엄",
+                price = monthlyLabel,
+                sub = "7일 무료 후 자동 결제 · 언제든 해지",
+                badge = "인기",
+                onClick = { selectedPlan = "monthly" },
+            )
+            PlanRow(
+                selected = selectedPlan == "yearly",
+                title = "연간 프리미엄",
+                price = yearlyLabel,
+                sub = "14일 무료 후 자동 결제 · 29% 절약",
+                badge = "29% 절약",
+                onClick = { selectedPlan = "yearly" },
             )
 
-            // 연간 플랜 — 월 환산가 + 절약 강조
-            PlanCard(
-                name = "연간 프리미엄",
-                price = yearlyPrice,
-                period = "/년",
-                isPopular = false,
-                badgeText = "29% 절약",
-                features = listOf(
-                    "프리미엄 모든 혜택 그대로",
-                    "월간 대비 29% 저렴",
-                ),
-                onSubscribe = {
+            // ── 공통 혜택 ──────────────────────────────────
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                listOf(
+                    "AI 요약·심층 분석 무제한",
+                    "관심사·즐겨찾기 무제한",
+                    "광고 없는 깔끔한 이용",
+                    "프리미엄 전용 리포트",
+                ).forEach { benefit ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Filled.CheckCircle, null, modifier = Modifier.size(18.dp), tint = Green400)
+                        Text(benefit, fontSize = 14.sp)
+                    }
+                }
+            }
+
+            // ── 단일 구독 버튼 ─────────────────────────────
+            // 선택한 플랜의 실제 약관 값 (체험 일수·체험 후 청구 가격)
+            val trialDays = if (selectedPlan == "monthly") 7 else 14
+            val planPriceLabel = if (selectedPlan == "monthly") monthlyLabel else yearlyLabel
+            Button(
+                onClick = {
                     AnalyticsHelper.log(
                         AnalyticsHelper.SUBSCRIBE_TAP,
-                        mapOf("variant" to variant, "product" to "yearly"),
+                        mapOf("variant" to variant, "product" to selectedPlan),
                     )
-                    billingManager.launchPurchaseFlow(activity, BillingManager.PRODUCT_PREMIUM_YEARLY)
+                    val product = if (selectedPlan == "monthly")
+                        BillingManager.PRODUCT_PREMIUM_MONTHLY
+                    else BillingManager.PRODUCT_PREMIUM_YEARLY
+                    billingManager.launchPurchaseFlow(activity, product)
                 },
-                ctaText = "연간 구독",
-                subPriceText = yearlyPerMonth.takeIf { it.isNotBlank() }?.let { "월 ${it}꼴 · 가장 경제적" },
-            )
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                // 가격 로딩 전에는 구매 비활성화 (잘못된 가격으로 구매 방지)
+                enabled = pricesReady,
+            ) {
+                Text(
+                    if (pricesReady) "${trialDays}일 무료 체험 시작" else "가격 불러오는 중…",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                )
+            }
+
+            // 결제 버튼 바로 아래에 핵심 약관을 "또렷한 박스"로 표기 (Play 정기결제 정책 준수)
+            // ① 체험 종료 시점 ② 종료 후 정확한 가격 ③ 자동 갱신 ④ 해지 방법 — 한눈에 보이게
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                ),
+            ) {
+                Text(
+                    "${trialDays}일간 무료로 이용한 뒤, 체험이 끝나면 $planPriceLabel 이(가) 자동 결제됩니다. " +
+                    "체험 기간 중 해지하면 요금이 청구되지 않습니다. " +
+                    "구독은 해지 전까지 매 기간 자동 갱신되며, Google Play › 구독에서 언제든지 해지할 수 있습니다.",
+                    modifier = Modifier.padding(14.dp),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 19.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                )
+            }
 
             // 구매 복원 (기기 변경/재설치 대응)
             TextButton(onClick = { billingManager.restorePurchases() }) {
@@ -203,23 +249,79 @@ fun PaywallScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        "구독 안내",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        "구독 약관 안내",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                     )
                     Text(
-                        "• 월간 프리미엄은 7일 무료 체험 후 ${monthlyPrice}/월이 자동 청구됩니다.\n" +
+                        "• 월간 프리미엄: 7일 무료 체험 후 $monthlyLabel 자동 청구\n" +
+                        "• 연간 프리미엄: 14일 무료 체험 후 $yearlyLabel 자동 청구\n" +
                         "• 무료 체험 기간 중 해지하면 요금이 청구되지 않습니다.\n" +
-                        "• 연간 프리미엄은 ${yearlyPrice}/년이 즉시 결제됩니다(무료 체험 미포함).\n" +
                         "• 구독은 해지 전까지 기간이 끝날 때마다 자동 갱신됩니다.\n" +
                         "• 해지는 언제든 Google Play › 구독에서 할 수 있으며, 다음 결제일 이후 갱신이 중단됩니다.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                        lineHeight = 17.sp,
+                        fontSize = 12.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        lineHeight = 19.sp,
                     )
                 }
             }
+        }
+    }
+}
+
+// ── 선택형 플랜 행 ─────────────────────────────────────────
+@Composable
+fun PlanRow(
+    selected: Boolean,
+    title: String,
+    price: String,
+    sub: String,
+    badge: String?,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                if (selected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+                null,
+                tint = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    if (badge != null) {
+                        Surface(shape = RoundedCornerShape(6.dp), color = Amber50) {
+                            Text(
+                                badge,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 10.sp, color = Amber400,
+                            )
+                        }
+                    }
+                }
+                Text(sub, fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            }
+            Text(price, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
 }

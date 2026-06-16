@@ -28,6 +28,7 @@ import com.teddyjs.news.domain.model.NewsCategory
 import com.teddyjs.news.domain.model.UserPlan
 import com.teddyjs.news.presentation.theme.*
 import com.teddyjs.news.presentation.ui.settings.SettingsViewModel
+import com.teddyjs.news.util.BackgroundPermissionHelper
 import com.teddyjs.news.util.BillingManager
 import com.teddyjs.news.util.ShareUtils
 import kotlinx.coroutines.launch
@@ -52,6 +53,7 @@ fun SettingsScreen(
     val nightNotification by viewModel.nightNotification.collectAsState()
     val followedTopics by viewModel.followedTopics.collectAsState()
     var showTopicDialog by remember { mutableStateOf(false) }
+    var showBgPermissionDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val subscribedProductId by viewModel.subscribedProductId.collectAsState()
@@ -205,6 +207,21 @@ fun SettingsScreen(
                                 onCheckedChange = { viewModel.setNightNotification(it) }
                             )
                         }
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Filled.Settings,
+                        iconTint = Amber400,
+                        title = "백그라운드 실행 허용",
+                        subtitle = "재부팅·종료 후에도 알림이 오게 하려면 설정해주세요",
+                        onClick = { showBgPermissionDialog = true },
+                    )
+                }
+
+                if (showBgPermissionDialog) {
+                    BackgroundPermissionDialog(
+                        context = context,
+                        onDismiss = { showBgPermissionDialog = false },
                     )
                 }
 
@@ -484,6 +501,56 @@ fun SettingsItem(
         modifier = Modifier.padding(start = 48.dp),
         thickness = 0.5.dp,
         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+    )
+}
+
+// ── 백그라운드 실행 허용 안내 ─────────────────────────────────
+@Composable
+fun BackgroundPermissionDialog(
+    context: android.content.Context,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("백그라운드 실행 허용", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "삼성·샤오미 등 일부 휴대폰은 절전 기능 때문에 앱을 종료하거나 재부팅하면 " +
+                    "정기 브리핑·속보 알림이 오지 않을 수 있어요. 아래 두 가지를 켜두면 안정적으로 받을 수 있어요.",
+                    fontSize = 13.sp, lineHeight = 19.sp,
+                )
+                Text(
+                    "① 배터리 절전 예외 — 이 앱을 '제한 없음'으로 설정",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+                Text(
+                    "② 자동 실행 허용 — 재부팅 후 자동 시작 켜기 (샤오미 필수)",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                BackgroundPermissionHelper.openBatteryOptimizationSettings(context)
+            }) {
+                Text("배터리 설정 열기")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    BackgroundPermissionHelper.openAutoStartSettings(context)
+                }) {
+                    Text("자동 실행 설정")
+                }
+                TextButton(onClick = onDismiss) { Text("닫기") }
+            }
+        },
     )
 }
 

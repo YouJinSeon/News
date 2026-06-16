@@ -1,10 +1,18 @@
 package com.teddyjs.news.presentation.ui.report
 
 import android.app.Activity
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -203,6 +211,7 @@ fun ReportScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportContent(report: WeeklyReport) {
     // 헤더
@@ -221,20 +230,9 @@ fun ReportContent(report: WeeklyReport) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("관심사 분포", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-            report.categoryDistribution.entries.sortedByDescending { it.value }.forEach { (cat, pct) ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(cat, fontSize = 12.sp, modifier = Modifier.width(70.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-                    LinearProgressIndicator(
-                        progress = { pct / 100f },
-                        modifier = Modifier.weight(1f).height(6.dp),
-                        color = Green400,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                    Text("$pct%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), modifier = Modifier.width(32.dp))
-                }
-            }
+            CategoryDonut(report.categoryDistribution)
         }
     }
 
@@ -258,7 +256,10 @@ fun ReportContent(report: WeeklyReport) {
     if (report.topKeywords.isNotEmpty()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("이번 주 핵심 키워드", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 report.topKeywords.take(5).forEachIndexed { i, kw ->
                     Surface(shape = RoundedCornerShape(12.dp), color = if (i == 0) Blue50 else MaterialTheme.colorScheme.surfaceVariant) {
                         Text(
@@ -289,6 +290,65 @@ fun ReportContent(report: WeeklyReport) {
                         Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(14.dp).padding(top = 2.dp), tint = Amber400)
                         Text(issue, fontSize = 12.sp, lineHeight = 18.sp)
                     }
+                }
+            }
+        }
+    }
+}
+
+// ── 관심사 분포 도넛 차트 ──────────────────────────────────
+private fun catColor(key: String): Color = when {
+    key.contains("STOCK") || key.contains("주식") -> Green400
+    key.contains("POLIT") || key.contains("정치") || key.contains("경제") -> Blue400
+    key.contains("GLOBAL") || key.contains("글로벌") -> Color(0xFFE24B4A)
+    key.contains("SPORT") || key.contains("스포") -> Amber400
+    else -> Gray400
+}
+
+private fun catLabel(key: String): String = when {
+    key.contains("STOCK") -> "주식/투자"
+    key.contains("POLIT") -> "정치/경제"
+    key.contains("GLOBAL") -> "글로벌"
+    key.contains("SPORT") -> "스포츠"
+    else -> key
+}
+
+@Composable
+fun CategoryDonut(distribution: Map<String, Int>) {
+    val entries = distribution.entries.sortedByDescending { it.value }
+    val total = entries.sumOf { it.value }.coerceAtLeast(1)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        Canvas(modifier = Modifier.size(116.dp)) {
+            val strokeW = 24.dp.toPx()
+            var startAngle = -90f
+            entries.forEach { (k, v) ->
+                val sweep = 360f * v / total
+                drawArc(
+                    color = catColor(k),
+                    startAngle = startAngle,
+                    sweepAngle = (sweep - 3f).coerceAtLeast(0f),
+                    useCenter = false,
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round),
+                    topLeft = Offset(strokeW / 2, strokeW / 2),
+                    size = Size(size.width - strokeW, size.height - strokeW),
+                )
+                startAngle += sweep
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            entries.forEach { (k, v) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(catColor(k)))
+                    Text(catLabel(k), fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+                    Text("$v%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
