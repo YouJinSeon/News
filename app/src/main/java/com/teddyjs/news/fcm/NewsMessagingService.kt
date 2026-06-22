@@ -75,7 +75,9 @@ class NewsMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         // 토픽 기반 발송이라 토큰 저장은 필수 아님. 구독만 보장.
+        // breaking(속보) + feed_sync(정기 브리핑·피드 갱신 트리거) 둘 다 재구독.
         FirebaseMessaging.getInstance().subscribeToTopic("breaking")
-        Timber.d("FCM 새 토큰 발급, breaking 토픽 재구독")
+        FirebaseMessaging.getInstance().subscribeToTopic("feed_sync")
+        Timber.d("FCM 새 토큰 발급, breaking·feed_sync 토픽 재구독")
     }
 }

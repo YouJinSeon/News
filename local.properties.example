@@ -1,0 +1,7 @@
+# local.properties — Git에 올리지 마세요 (.gitignore에 추가)
+# Gemini API Key (저번에 발급한 키 입력)
+GEMINI_API_KEY=여기에_발급받은_Gemini_키_입력
+
+# AdMob App ID (AdMob 콘솔에서 발급)
+# 테스트 중에는 아래 테스트 ID 사용 가능
+ADMOB_APP_ID=ca-app-pub-3940256099942544~3347511713

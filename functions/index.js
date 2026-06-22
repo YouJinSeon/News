@@ -12,10 +12,62 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
 initializeApp();
 const db = getFirestore();
+
+// 새 Gemini 키는 함수 secret으로만 보관(앱·코드에 절대 넣지 않음).
+// 설정:  firebase functions:secrets:set GEMINI_KEY   (새 키 붙여넣기)
+const GEMINI_KEY = defineSecret("GEMINI_KEY");
+
+// ── 앱용 Gemini 프록시 (App Check 강제) ──────────────────────
+// 앱은 키 없이 프롬프트만 보냄 → 함수가 서버 키로 Gemini 호출 → 텍스트만 반환.
+// enforceAppCheck: 진짜 앱(Play Integrity 통과)만 호출 가능 → 키 도용 차단.
+exports.geminiProxy = onCall(
+  {
+    region: "asia-northeast3",
+    enforceAppCheck: true,
+    secrets: [GEMINI_KEY],
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const prompt = String((request.data && request.data.prompt) || "");
+    if (!prompt.trim()) throw new HttpsError("invalid-argument", "prompt가 필요합니다.");
+    if (prompt.length > 12000) throw new HttpsError("invalid-argument", "prompt가 너무 깁니다.");
+    try {
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+          GEMINI_KEY.value(),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        logger.error("Gemini 오류", json && json.error);
+        throw new HttpsError("internal", "AI 호출에 실패했어요.");
+      }
+      const text =
+        (json.candidates &&
+          json.candidates[0] &&
+          json.candidates[0].content &&
+          json.candidates[0].content.parts &&
+          json.candidates[0].content.parts[0] &&
+          json.candidates[0].content.parts[0].text) ||
+        "";
+      return { text };
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      logger.error("geminiProxy 실패", e);
+      throw new HttpsError("internal", "AI 호출 중 오류가 발생했어요.");
+    }
+  },
+);
 
 // 속보로 간주할 RSS 소스 (연합뉴스 등)
 const FEEDS = [
@@ -116,6 +168,64 @@ exports.checkBreakingNews = onSchedule(
     const sentNow = DAILY_LIMIT - sentToday - remaining;
     if (sentNow > 0) {
       await counterRef.set({ count: sentToday + sentNow }, { merge: true });
+    }
+  }
+);
+
+/**
+ * 정기 브리핑 — 매일 08:00 / 12:00 / 19:00 (KST)에 '직접 알림'으로 발송.
+ *
+ * 핵심: 브리핑을 앱의 WorkManager 워커로 만들면 절전(삼성·샤오미)에서 워커가
+ * 안 돌아 누락된다(속보는 직접 알림이라 오는데 브리핑만 안 오는 이유).
+ * 그래서 서버가 헤드라인을 모아 '속보와 동일한 직접 알림' 방식으로 쏜다.
+ * 앱은 type != "breaking" 이면 daily_briefing 채널로 바로 표시 → 앱 수정 불필요.
+ * 전송 토픽은 전체가 확실히 구독 중인 "breaking" 으로 보내 도달을 보장한다.
+ */
+exports.sendBriefingTrigger = onSchedule(
+  {
+    schedule: "0 8,12,19 * * *",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async () => {
+    const kstHour = (new Date().getUTCHours() + 9) % 24;
+    const slot =
+      kstHour < 11 ? { title: "오늘의 아침 브리핑", emoji: "☀️" } :
+      kstHour < 15 ? { title: "점심 뉴스 브리핑", emoji: "🌤️" } :
+      { title: "오늘의 저녁 브리핑", emoji: "🌙" };
+
+    // 상위 헤드라인 3개 수집 (연합뉴스 일반)
+    let headlines = [];
+    try {
+      const res = await fetch("https://www.yna.co.kr/rss/news.xml");
+      const xml = await res.text();
+      headlines = parseRss(xml)
+        .sort((a, b) => (b.pubDate || 0) - (a.pubDate || 0))
+        .slice(0, 3)
+        .map((it, i) => `${i + 1}. ${it.title}`);
+    } catch (e) {
+      logger.warn("브리핑 헤드라인 수집 실패", e);
+    }
+    const body = headlines.length
+      ? headlines.join("\n")
+      : "지금 주요 뉴스를 확인해보세요.";
+
+    try {
+      await getMessaging().send({
+        topic: "breaking", // 전체가 확실히 구독 중인 토픽으로 직접 발송 → 절전 뚫고 도달
+        data: {
+          type: "briefing", // breaking 이 아니므로 앱이 daily_briefing 채널로 바로 표시
+          title: `${slot.emoji} ${slot.title}`,
+          body,
+          articleId: "",
+        },
+        android: { priority: "high" },
+      });
+      logger.info(`정기 브리핑 발송: ${slot.title}`);
+    } catch (e) {
+      logger.error("브리핑 발송 실패", e);
     }
   }
 );

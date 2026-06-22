@@ -1,12 +1,9 @@
 package com.teddyjs.news.data.remote
 
-import com.teddyjs.news.BuildConfig
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.functions.FirebaseFunctions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
@@ -14,12 +11,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class GeminiService @Inject constructor(
-    private val okHttpClient: OkHttpClient,
-) {
-    private val apiKey = BuildConfig.GEMINI_API_KEY
-
-    private val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+class GeminiService @Inject constructor() {
+    // 보안: API 키를 앱에 두지 않는다. Cloud Function(geminiProxy)이 서버 키로 호출하고,
+    // App Check(Play Integrity)로 '진짜 우리 앱'만 함수를 부를 수 있게 막는다.
+    private val functions = FirebaseFunctions.getInstance("asia-northeast3")
 
     companion object {
         /**
@@ -266,41 +261,18 @@ class GeminiService @Inject constructor(
         }
     }
 
+    // 앱은 키 없이 프롬프트만 Cloud Function 으로 보내고 결과 텍스트만 받는다.
+    // (Tasks.await 는 호출부가 Dispatchers.IO 에서 부르므로 블로킹 OK)
     private fun callGemini(prompt: String): String? {
         return runCatching {
-            val body = JSONObject().apply {
-                put("contents", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("parts", JSONArray().apply {
-                            put(JSONObject().apply { put("text", prompt) })
-                        })
-                    })
-                })
-            }.toString()
-
-            val request = Request.Builder()
-                .url("$baseUrl?key=$apiKey")
-                .post(body.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                val resBody = response.body?.string() ?: return null  // body 먼저 읽기
-                if (!response.isSuccessful) {
-                    Timber.e("Gemini error: ${response.code} / $resBody")  // body 출력
-                    return null
-                }
-                Timber.d("Gemini raw: $resBody")  // 성공 시 응답 확인
-                val json = JSONObject(resBody)
-                json.getJSONArray("candidates")
-                    .getJSONObject(0)
-                    .getJSONObject("content")
-                    .getJSONArray("parts")
-                    .getJSONObject(0)
-                    .getString("text")
-                    .replace("```json", "").replace("```", "").trim()
-            }
+            val data = hashMapOf<String, Any>("prompt" to prompt)
+            val result = Tasks.await(functions.getHttpsCallable("geminiProxy").call(data))
+            @Suppress("UNCHECKED_CAST")
+            val map = result.getData() as? Map<String, Any?>
+            (map?.get("text") as? String)
+                ?.replace("```json", "")?.replace("```", "")?.trim()
         }.getOrElse {
-            Timber.e(it, "Gemini call failed")
+            Timber.e(it, "geminiProxy 호출 실패")
             null
         }
     }

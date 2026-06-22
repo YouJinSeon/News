@@ -34,6 +34,10 @@ class DailyBriefingWorker @AssistedInject constructor(
             val dailyEnabled = userPrefs.getDailyNotification()
             if (!dailyEnabled) return Result.success()
 
+            // 자가복구: 워커가 돌 때마다 다음 정시 알람을 다시 건다.
+            // (알람 체인이 절전으로 끊겨도, 백업 워커가 한 번 돌면 알람이 되살아남)
+            BriefingAlarmScheduler.scheduleNext(applicationContext)
+
             val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
 
             val nightEnabled = userPrefs.nightNotificationFlow.first()
